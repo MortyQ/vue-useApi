@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import { createApi, createApiClient,
-    setAuthMonitor, AuthEventType} from '@my-lib/use-api'
+    setAuthMonitor, AuthEventType} from '@ametie/vue-muza-use'
 import { toast } from 'vue-sonner'
 
 const app = createApp(App)

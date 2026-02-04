@@ -17,8 +17,7 @@ export interface AuthEventPayload {
 export type AuthMonitorFn = (type: AuthEventType, payload: AuthEventPayload) => void;
 
 const defaultMonitor: AuthMonitorFn = (type, payload) => {
-    const isDev = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development' ||
-        (import.meta as any)?.env?.DEV;
+    const isDev = typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
 
     if (isDev) {
         console.debug(`[AuthMonitor] ${type}`, payload);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useApi } from '@my-lib/use-api';
+import { useApi } from '@ametie/vue-muza-use';
 import {Toaster} from "vue-sonner";
 
 const { data, loading, error, execute } = useApi('/todos/1', {
