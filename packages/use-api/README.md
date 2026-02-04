@@ -1,6 +1,6 @@
 # Vue Muza Use 🎹
 
-[![npm version](https://img.shields.io/npm/v/@mortyq/vue-muza-use.svg?style=flat-square)](https://www.npmjs.com/package/@mortyq/vue-muza-use)
+[![npm version](https://img.shields.io/npm/v/@ametie/vue-muza-use.svg?style=flat-square)](https://www.npmjs.com/package/@ametie/vue-muza-use)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![Vue 3](https://img.shields.io/badge/Vue-3.x-green.svg?style=flat-square)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Included-blue.svg?style=flat-square)](https://www.typescriptlang.org/)
@@ -34,13 +34,13 @@
 
 ```bash
 # npm
-npm install @mortyq/vue-muza-use axios
+npm install @ametie/vue-muza-use axios
 
 # pnpm
-pnpm add @mortyq/vue-muza-use axios
+pnpm add @ametie/vue-muza-use axios
 
 # yarn
-yarn add @mortyq/vue-muza-use axios
+yarn add @ametie/vue-muza-use axios
 ```
 
 ---
@@ -53,7 +53,7 @@ Use `createApiClient` for a "batteries-included" setup, or bring your own Axios 
 
 ```typescript
 import { createApp } from 'vue'
-import { createApi, createApiClient, setAuthMonitor } from '@mortyq/vue-muza-use'
+import { createApi, createApiClient, setAuthMonitor } from '@ametie/vue-muza-use'
 import App from './App.vue'
 
 const app = createApp(App)
@@ -92,7 +92,7 @@ app.mount('#app')
 
 ```typescript
 <script setup lang="ts">
-import { useApi } from '@mortyq/vue-muza-use'
+import { useApi } from '@ametie/vue-muza-use'
 
 interface User {
   id: number
@@ -123,7 +123,7 @@ Typically used for forms. Pass a `ref` as `data`, and it automatically unwraps c
 ```typescript
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useApiPost } from '@mortyq/vue-muza-use'
+import { useApiPost } from '@ametie/vue-muza-use'
 
 const formData = ref({ email: '', password: '' })
 
@@ -170,7 +170,7 @@ watch(searchQuery, (newVal) => {
 Useful for complex filters where changing one filter should invalidate all pending requests on the page (or scope).
 
 ```typescript
-import { useAbortController } from '@mortyq/vue-muza-use'
+import { useAbortController } from '@ametie/vue-muza-use'
 
 // In your specific composable or component
 const { execute } = useApi('/heavy-report', {
@@ -264,4 +264,4 @@ This happens transparently to your components. They just "wait" a bit longer for
 
 ## License
 
-MIT © [MortyQ](https://github.com/MortyQ)
+MIT © [Ametie](https://github.com/ametie)
