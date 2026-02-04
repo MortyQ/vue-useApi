@@ -246,6 +246,7 @@ interface CreateApiClientOptions {
 
 ---
 
+
 ## 🔐 Auth & Refresh Logic
 
 `vue-muza-use` implements a robust **Interceptor Queue** pattern for handling JWTs.
