@@ -22,7 +22,9 @@
     "request",
     "auth",
     "refresh",
-    "muza"
+    "muza",
+    "rest",
+    "crud"
   ],
   "type": "module",
   "types": "./dist/index.d.ts",

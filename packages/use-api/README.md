@@ -218,6 +218,55 @@ const { abortAll } = useAbortController()
 
 ---
 
+## 🚨 Advanced Error Handling
+
+By default, the library attempts to normalize errors into a standard `ApiError` format. However, every backend is different. You can fully customize how errors are parsed globally.
+
+### Default Behavior
+If you don't provide a parser, we extract the message from `error.response.data.message` or `error.message`.
+
+### Custom Error Parser
+Inject your own logic to transform your backend's specific error format into our uniform structure.
+
+```typescript
+// main.ts
+app.use(createApi({
+  axios: api,
+  // 👇 Define how to parse errors from your specific API
+  errorParser: (error: any) => {
+    const data = error.response?.data
+    
+    // Example: Laravel/Rails style validation errors
+    if (data?.errors) {
+       return {
+          message: 'Validation Failed',
+          status: error.response.status,
+          code: 'VALIDATION_ERROR',
+          errors: data.errors // { email: ['Invalid email'] }
+       }
+    }
+
+    // Example: Custom wrap format { success: false, error: { msg: "..." } }
+    if (data?.error?.msg) {
+        return {
+            message: data.error.msg,
+            status: error.response.status,
+            code: data.error.code
+        }
+    }
+
+    // Fallback to default behavior
+    return {
+       message: error.message || 'Unknown error',
+       status: error.response?.status || 500,
+       details: error
+    }
+  }
+}))
+```
+
+---
+
 ## 📚 API Reference
 
 ### `useApi<T, D>(url, options)`
@@ -298,6 +347,3 @@ This happens transparently to your components. They just "wait" a bit longer for
 
 ---
 
-## License
-
-MIT © [Ametie](https://github.com/ametie)

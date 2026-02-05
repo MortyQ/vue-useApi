@@ -12,7 +12,7 @@ export function useApi<T = unknown, D = unknown>(
     url: string | Ref<string>,
     options: UseApiOptions<T, D> = {},
 ): UseApiReturn<T, D> {
-    const { axios, onError: globalErrorHandler, globalOptions } = useApiConfig();
+    const { axios, onError: globalErrorHandler, globalOptions, errorParser } = useApiConfig();
 
     const {
         method = "GET",
@@ -91,10 +91,10 @@ export function useApi<T = unknown, D = unknown>(
                 return null;
             }
 
-            // Парсинг
-            const apiError = parseApiError(err);
+            // Parse error using global parser if available, otherwise use default
+            const apiError = errorParser ? errorParser(err) : parseApiError(err);
 
-            // Глобальный хендлер (ТОСТЫ)
+            // Global handler (Notifications/Toasts)
             if (!skipErrorNotification && globalErrorHandler) {
                 globalErrorHandler(apiError, err);
             }
