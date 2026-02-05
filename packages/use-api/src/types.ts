@@ -1,5 +1,5 @@
 import type { AxiosRequestConfig, AxiosResponse, AxiosInstance } from "axios";
-import type { MaybeRefOrGetter, Ref } from "vue";
+import type {MaybeRefOrGetter, Ref, WatchSource} from "vue";
 
 export interface ApiError {
     message: string;
@@ -36,6 +36,7 @@ export interface UseApiOptions<T = unknown, D = unknown> extends ApiRequestConfi
     debounce?: number;
     useGlobalAbort?: boolean;
     initialLoading?: boolean;
+    watch?: WatchSource | WatchSource[];
 }
 
 export interface UseApiReturn<T = unknown, D = unknown> {

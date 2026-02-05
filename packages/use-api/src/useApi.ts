@@ -1,7 +1,7 @@
 // packages/use-api/src/useApi.ts
 import { debounceFn } from "./utils/debounce";
 import type {AxiosRequestConfig, AxiosResponse} from "axios";
-import { ref, type Ref, getCurrentScope, onScopeDispose, toValue } from "vue";
+import { ref, type Ref, getCurrentScope, onScopeDispose, toValue, watch } from "vue";
 
 import type { UseApiOptions, UseApiReturn, ApiRequestConfig, ApiError } from "./types";
 import { useApiConfig } from "./plugin"; // <--- INJECTION
@@ -130,6 +130,12 @@ export function useApi<T = unknown, D = unknown>(
         state.reset();
         state.setLoading(false);
     };
+
+    if (options.watch) {
+        watch(options.watch, () => {
+             execute();
+        }, { deep: true });
+    }
 
     if (getCurrentScope()) {
         onScopeDispose(() => abort("Scope disposed"));

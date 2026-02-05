@@ -151,21 +151,52 @@ const { execute } = useApiPost('/auth/register', {
 })
 ```
 
-### Debounced Search
-Perfect for search inputs to avoid spamming the API.
+### 🔄 Auto-Refetching (Watch & Debounce)
+You can automatically trigger the request whenever specific Refs change. This is perfect for **Live Search** or **Auto-Save** forms.
 
+> **💡 Pro Tip:** When watching text inputs (like search), **always** use `debounce` to prevent flooding your server with requests on every keystroke.
+
+#### Live Search
 ```typescript
 const searchQuery = ref('')
+// Use a computed URL so it updates when execute() is triggered
+const url = computed(() => `/search?q=${searchQuery.value}`)
 
-const { data, execute } = useApi<SearchResult[]>('/search', {
+const { data, loading } = useApi(url, {
   method: 'GET',
-  debounce: 500, // Wait 500ms after last call
-  abortPrevious: true // Kill previous request if new one starts
+  watch: searchQuery, // 👀 Auto-execute when this ref changes
+  debounce: 500,      // ⏳ Wait 500ms after user stops typing
+  abortPrevious: true // Kill previous request if it's still running
 })
+```
 
-// Watcher triggers execute wrapped in debounce
-watch(searchQuery, (newVal) => {
-  execute({ params: { q: newVal } })
+#### Filters (Immediate Refetch)
+For inputs like Selects, Toggles, or Tabs where you want instant updates without delay. `watch` accepts an array of Refs.
+
+```typescript
+const category = ref('all')
+const inStock = ref(true)
+
+// URL updates reactively
+const url = computed(() => 
+  `/products?cat=${category.value}&stock=${inStock.value}`
+)
+
+const { data } = useApi(url, {
+  watch: [category, inStock], // 👀 Re-fetch instantly when any filter changes
+  // default debounce is 0
+})
+```
+
+#### Auto-Save Form
+```typescript
+const settings = ref({ theme: 'dark', notifications: true })
+
+useApiPost('/user/settings', {
+  data: settings,     // Passing ref: library automatically unwraps it
+  watch: settings,    // Watch the form for changes (deep watch supported)
+  debounce: 1000,     // Save after 1 second of inactivity
+  onSuccess: () => console.log('Settings saved!')
 })
 ```
 
@@ -209,6 +240,7 @@ The main composable.
 | `immediate` | `boolean` | `false` | Trigger request automatically on creation. |
 | `retry` | `boolean \| number` | `false` | Number of retries on failure. |
 | `debounce` | `number` | `0` | Debounce time in ms. |
+| `watch` | `WatchSource \| WatchSource[]` | `undefined` | Ref(s) to watch for auto-execution. |
 | `authMode` | `'default' \| 'public'` | `'default'` | `'public'` skips token injection. |
 | `initialData` | `T` | `null` | Initial value for `data` ref. |
 | `onSuccess` | `(res) => void` | - | Callback on 2xx response. |
