@@ -1,4 +1,3 @@
-// packages/use-api/src/useApi.ts
 import { debounceFn } from "./utils/debounce";
 import type {AxiosRequestConfig, AxiosResponse} from "axios";
 import { ref, type Ref, getCurrentScope, onScopeDispose, toValue, watch } from "vue";
@@ -13,10 +12,8 @@ export function useApi<T = unknown, D = unknown>(
     url: string | Ref<string>,
     options: UseApiOptions<T, D> = {},
 ): UseApiReturn<T, D> {
-    // 1. Получаем зависимости (Axios + Global Error Handler)
     const { axios, onError: globalErrorHandler, globalOptions } = useApiConfig();
 
-    // 2. Мерджим настройки (Global > Local)
     const {
         method = "GET",
         immediate = false,
