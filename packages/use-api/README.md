@@ -175,7 +175,7 @@ const id = ref(1)
 // URL is evaluated dynamically on every execution
 const { execute } = useApi(() => `/users/${id.value}`)
 
-// To auto-fetch when ID changes, add it to 'watch'
+// To auto-fetch when ID changes, add pnpm up @ametie/vue-muza-use --latestit to 'watch'
 useApi(() => `/users/${id.value}`, {
     watch: id
 })
