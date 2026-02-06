@@ -37,6 +37,13 @@ export interface UseApiOptions<T = unknown, D = unknown> extends ApiRequestConfi
     useGlobalAbort?: boolean;
     initialLoading?: boolean;
     watch?: WatchSource | WatchSource[];
+    /**
+     * Polling configuration.
+     * - Pass a **number** (ms) for simple polling.
+     * - Pass an **object** `{ interval: number, whenHidden?: boolean }` for advanced control.
+     * Properties inside the object can also be Refs.
+     */
+    poll?: MaybeRefOrGetter<number | { interval: MaybeRefOrGetter<number>; whenHidden?: MaybeRefOrGetter<boolean> }>;
 }
 
 export interface UseApiReturn<T = unknown, D = unknown> {

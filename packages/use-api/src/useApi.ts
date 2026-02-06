@@ -1,8 +1,8 @@
 import { debounceFn } from "./utils/debounce";
-import type {AxiosRequestConfig, AxiosResponse} from "axios";
+import type {AxiosRequestConfig} from "axios";
 import { ref, type Ref, getCurrentScope, onScopeDispose, toValue, watch } from "vue";
 
-import type { UseApiOptions, UseApiReturn, ApiRequestConfig, ApiError } from "./types";
+import type { UseApiOptions, UseApiReturn, ApiRequestConfig } from "./types";
 import { useApiConfig } from "./plugin"; // <--- INJECTION
 import { parseApiError } from "./utils/errorParser";
 import { useApiState } from "./composables/useApiState";
@@ -29,6 +29,7 @@ export function useApi<T = unknown, D = unknown>(
         authMode = "default",
         useGlobalAbort = globalOptions?.useGlobalAbort ?? true,
         initialLoading = false,
+        poll = 0,
         ...axiosConfig
     } = options;
 
@@ -36,8 +37,24 @@ export function useApi<T = unknown, D = unknown>(
     const state = useApiState<T>(initialData as T | null, { initialLoading: startLoading });
     const abortController = ref<AbortController | null>(null);
     const globalAbort = useGlobalAbort ? useAbortController() : null;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Helper to resolve poll config
+    const getPollConfig = () => {
+        const val = toValue(poll);
+        if (typeof val === "number") return { interval: val, whenHidden: false };
+        if (val && typeof val === "object") {
+            return {
+                interval: toValue(val.interval),
+                whenHidden: toValue(val.whenHidden) ?? false
+            };
+        }
+        return { interval: 0, whenHidden: false };
+    };
 
     const executeRequest = async (config?: ApiRequestConfig<D>): Promise<T | null> => {
+        // Clear previous poll timer to avoid overlaps if manual execute happened
+        if (pollTimer) clearTimeout(pollTimer);
         const requestUrl = typeof url === "string" ? url : url.value;
 
         if (abortController.value) abortController.value.abort("Cancelled by new request");
@@ -111,6 +128,21 @@ export function useApi<T = unknown, D = unknown>(
             if (!wasCancelled) {
                 state.setLoading(false);
                 onFinish?.();
+
+                // Polling Logic
+                const { interval, whenHidden } = getPollConfig();
+                if (interval > 0) {
+                    const shouldPoll = whenHidden || (typeof document !== "undefined" && !document.hidden);
+                    if (shouldPoll) {
+                        pollTimer = setTimeout(() => {
+                            pollTimer = null;
+                            const { whenHidden: currentWhenHidden } = getPollConfig();
+                            if (currentWhenHidden || (typeof document === "undefined" || !document.hidden)) {
+                                execute();
+                            }
+                        }, interval);
+                    }
+                }
             }
         }
     };
@@ -118,6 +150,7 @@ export function useApi<T = unknown, D = unknown>(
     const execute = debounce > 0 ? debounceFn(executeRequest, debounce) : executeRequest;
 
     const abort = (msg?: string) => {
+        if (pollTimer) clearTimeout(pollTimer);
         abortController.value?.abort(msg);
         abortController.value = null;
     };
@@ -138,7 +171,53 @@ export function useApi<T = unknown, D = unknown>(
         onScopeDispose(() => abort("Scope disposed"));
     }
 
+    // Initial check for polling if immediate is false but pollInterval is set?
+    // Usually polling requires one execution to start the loop in this logic.
+    // If immediate=true, it starts.
     if (immediate) execute();
+
+    // Visibility Handling for Polling
+    if (typeof document !== "undefined") {
+        const handleVisibility = () => {
+            if (document.hidden) return;
+            // On tab focus, if polling is enabled and no timer is running, resume/catch-up
+            const { interval } = getPollConfig();
+            if (interval > 0 && !pollTimer && !state.loading.value) {
+                 execute();
+            }
+        };
+        // We use a simple listener. In a real app, might want to use useEventListener from vueuse if available, but native is fine.
+        document.addEventListener("visibilitychange", handleVisibility);
+
+        if (getCurrentScope()) {
+            onScopeDispose(() => document.removeEventListener("visibilitychange", handleVisibility));
+        }
+    }
+
+    // Watch for dynamic poll changes
+    if (poll) {
+         watch(() => toValue(poll), () => {
+             const { interval } = getPollConfig();
+
+             if (interval > 0) {
+                 // If timer is running, we want to restart with new interval
+                 if (pollTimer) {
+                     clearTimeout(pollTimer);
+                     pollTimer = null;
+                 }
+                 // If we are idle (not loading), start immediately to apply new settings
+                 if (!state.loading.value) {
+                     execute();
+                 }
+             } else {
+                 // If disabled, clear any pending timer
+                 if (pollTimer) {
+                     clearTimeout(pollTimer);
+                     pollTimer = null;
+                 }
+             }
+         }, { deep: true });
+    }
 
     return { ...state, execute, abort, reset };
 }
