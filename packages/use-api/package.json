@@ -1,6 +1,6 @@
 {
   "name": "@ametie/vue-muza-use",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Powerful Vue 3 API composable (Muza Kit) with Axios, Auto-Refresh & TypeScript",
   "author": "MortyQ",
   "license": "MIT",
