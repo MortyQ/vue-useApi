@@ -200,6 +200,38 @@ useApiPost('/user/settings', {
 })
 ```
 
+### ⏰ Auto-Polling (Interval)
+Keep your data fresh with built-in polling support. It works smartly: by default, it **pauses** when the tab is hidden and **resumes immediately** when the user returns.
+
+#### Simple Polling
+Fetch data every 5 seconds.
+```typescript
+const { data } = useApi('/notifications', {
+  poll: 5000 // Simple number: interval in ms
+})
+```
+
+#### Smart Control
+Configure pause behavior and interval explicitly.
+```typescript
+useApi('/stock-prices', {
+  poll: {
+    interval: 1000,
+    whenHidden: true // ⚠️ Keep polling even if tab is backgrounded
+  }
+})
+```
+
+#### Reactive Polling
+You can pass a `Ref` to control polling dynamically. Perfect for "Pause/Resume" buttons.
+```typescript
+const interval = ref(3000)
+
+// If you set interval.value = 0, polling stops.
+// If you change it to 5000, it restarts with new interval immediately.
+useApi('/live-feed', { poll: interval })
+```
+
 ### Global Abort (Race Condition Killer)
 Useful for complex filters where changing one filter should invalidate all pending requests on the page (or scope).
 
@@ -290,6 +322,7 @@ The main composable.
 | `retry` | `boolean \| number` | `false` | Number of retries on failure. |
 | `debounce` | `number` | `0` | Debounce time in ms. |
 | `watch` | `WatchSource \| WatchSource[]` | `undefined` | Ref(s) to watch for auto-execution. |
+| `poll`  | `number \| { interval: number, whenHidden?: boolean } \| Ref` | `0` | Polling interval. Default pauses when hidden. |
 | `authMode` | `'default' \| 'public'` | `'default'` | `'public'` skips token injection. |
 | `initialData` | `T` | `null` | Initial value for `data` ref. |
 | `onSuccess` | `(res) => void` | - | Callback on 2xx response. |
