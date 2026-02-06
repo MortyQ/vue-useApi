@@ -318,6 +318,27 @@ describe('useApi', () => {
         }))
     });
 
+    it('should handle reactive params', async () => {
+        const params = ref({ sort: 'asc' })
+        ;(mockAxios.request as any).mockResolvedValue({ data: {}, status: 200 })
 
+        const { result } = mountuseApi({
+            params,
+        })
+
+        await result.execute()
+
+        expect(mockAxios.request).toHaveBeenCalledWith(expect.objectContaining({
+            params: { sort: 'asc' }
+        }))
+
+        // Update params ref
+        params.value = { sort: 'desc' }
+        await result.execute()
+
+        expect(mockAxios.request).toHaveBeenCalledWith(expect.objectContaining({
+            params: { sort: 'desc' }
+        }))
+    });
 
 })

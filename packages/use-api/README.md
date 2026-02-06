@@ -151,6 +151,21 @@ const { execute } = useApiPost('/auth/register', {
 })
 ```
 
+### Reactive Params (GET)
+You can pass a `ref` or `computed` to `params`, and it will be unwrapped automatically when the request executes.
+
+```typescript
+const filters = ref({ sort: 'desc', limit: 10 })
+
+const { execute } = useApi('/items', {
+  params: filters 
+})
+
+// Later...
+filters.value.sort = 'asc'
+await execute() // Generates: /items?sort=asc&limit=10
+```
+
 ### 🔄 Auto-Refetching (Watch & Debounce)
 You can automatically trigger the request whenever specific Refs change. This is perfect for **Live Search** or **Auto-Save** forms.
 
@@ -379,4 +394,3 @@ interface CreateApiClientOptions {
 This happens transparently to your components. They just "wait" a bit longer for the response.
 
 ---
-

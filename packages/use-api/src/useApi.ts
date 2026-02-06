@@ -87,6 +87,9 @@ export function useApi<T = unknown, D = unknown>(
             const rawData = config?.data !== undefined ? config.data : axiosConfig.data;
             const resolvedData = toValue(rawData);
 
+            const rawParams = config?.params !== undefined ? config.params : axiosConfig.params;
+            const resolvedParams = toValue(rawParams);
+
             if (!requestUrl) {
                 throw new Error("Request URL is missing");
             }
@@ -97,6 +100,7 @@ export function useApi<T = unknown, D = unknown>(
                 ...axiosConfig,
                 ...config,
                 data: resolvedData,
+                params: resolvedParams,
                 signal: controller.signal,
                 authMode: (config?.authMode || authMode) as any,
             } as AxiosRequestConfig);
