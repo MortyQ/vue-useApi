@@ -1,6 +1,6 @@
 import { debounceFn } from "./utils/debounce";
 import type {AxiosRequestConfig} from "axios";
-import {ref, getCurrentScope, onScopeDispose, toValue, watch, MaybeRefOrGetter} from "vue";
+import { ref, getCurrentScope, onScopeDispose, toValue, watch, type MaybeRefOrGetter } from "vue";
 
 import type { UseApiOptions, UseApiReturn, ApiRequestConfig } from "./types";
 import { useApiConfig } from "./plugin"; // <--- INJECTION
@@ -55,6 +55,7 @@ export function useApi<T = unknown, D = unknown>(
     const executeRequest = async (config?: ApiRequestConfig<D>): Promise<T | null> => {
         // Clear previous poll timer to avoid overlaps if manual execute happened
         if (pollTimer) clearTimeout(pollTimer);
+        console.log("URL", url)
         const requestUrl = toValue(url);
 
         if (abortController.value) abortController.value.abort("Cancelled by new request");

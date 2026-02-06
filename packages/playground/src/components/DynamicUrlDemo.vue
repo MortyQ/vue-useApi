@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useApi } from '@ametie/vue-muza-use'
 
 const userId = ref<number | undefined>(1)
 
-const url = computed(() => `/todos/${userId.value}`)
-
-const { data, loading, error } = useApi(url, {
+const { data, loading, error } = useApi(() => `/todos/${userId.value}`, {
   immediate: true,
   watch: userId
 })

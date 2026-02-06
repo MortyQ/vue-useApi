@@ -166,6 +166,21 @@ filters.value.sort = 'asc'
 await execute() // Generates: /items?sort=asc&limit=10
 ```
 
+### Dynamic URL (Getter)
+You can pass a function as the URL. Useful to avoid creating intermediate `computed` properties.
+
+```typescript
+const id = ref(1)
+
+// URL is evaluated dynamically on every execution
+const { execute } = useApi(() => `/users/${id.value}`)
+
+// To auto-fetch when ID changes, add it to 'watch'
+useApi(() => `/users/${id.value}`, {
+    watch: id
+})
+```
+
 ### 🔄 Auto-Refetching (Watch & Debounce)
 You can automatically trigger the request whenever specific Refs change. This is perfect for **Live Search** or **Auto-Save** forms.
 
@@ -181,7 +196,6 @@ const { data, loading } = useApi(url, {
   method: 'GET',
   watch: searchQuery, // 👀 Auto-execute when this ref changes
   debounce: 500,      // ⏳ Wait 500ms after user stops typing
-  abortPrevious: true // Kill previous request if it's still running
 })
 ```
 
@@ -324,7 +338,7 @@ The main composable.
 
 | Argument | Type | Description |
 |---|---|---|
-| `url` | `string | Ref<string>` | The API endpoint URL. |
+| `url` | `MaybeRefOrGetter<string>` | The API endpoint URL. Can be a string, a Ref, or a getter function. |
 | `options` | `UseApiOptions` | Configuration object (see below). |
 
 **Options (`options`):**
@@ -332,16 +346,22 @@ The main composable.
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `method` | `'GET' \| 'POST' ...` | `'GET'` | HTTP method. |
-| `data` | `Ref<D> \| D` | `undefined` | Request body. |
+| `data` | `MaybeRefOrGetter<D>` | `undefined` | Request body. |
+| `params` | `MaybeRefOrGetter<any>` | `undefined` | URL query parameters. |
 | `immediate` | `boolean` | `false` | Trigger request automatically on creation. |
 | `retry` | `boolean \| number` | `false` | Number of retries on failure. |
+| `retryDelay` | `number` | `1000` | Delay between retries in ms. |
 | `debounce` | `number` | `0` | Debounce time in ms. |
 | `watch` | `WatchSource \| WatchSource[]` | `undefined` | Ref(s) to watch for auto-execution. |
 | `poll`  | `number \| { interval: number, whenHidden?: boolean } \| Ref` | `0` | Polling interval. Default pauses when hidden. |
 | `authMode` | `'default' \| 'public'` | `'default'` | `'public'` skips token injection. |
 | `initialData` | `T` | `null` | Initial value for `data` ref. |
+| `initialLoading` | `boolean` | `false` | Initial boolean value for `loading` ref. |
+| `useGlobalAbort` | `boolean` | `true` | Uses global AbortController to prevent race conditions. |
 | `onSuccess` | `(res) => void` | - | Callback on 2xx response. |
 | `onError` | `(err) => void` | - | Callback on error. |
+| `onBefore` | `() => void` | - | Callback before request executes. |
+| `onFinish` | `() => void` | - | Callback after request finishes (success or fail). |
 | `skipErrorNotification`| `boolean` | `false` | Prevents triggering the global `onError`. |
 
 **Return Values:**
@@ -393,4 +413,3 @@ interface CreateApiClientOptions {
 
 This happens transparently to your components. They just "wait" a bit longer for the response.
 
----
