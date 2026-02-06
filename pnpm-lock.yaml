@@ -6,7 +6,11 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      happy-dom:
+        specifier: ^20.5.0
+        version: 20.5.0
 
   packages/playground:
     dependencies:

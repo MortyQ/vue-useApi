@@ -1,6 +1,6 @@
 import { debounceFn } from "./utils/debounce";
 import type {AxiosRequestConfig} from "axios";
-import { ref, type Ref, getCurrentScope, onScopeDispose, toValue, watch } from "vue";
+import {ref, getCurrentScope, onScopeDispose, toValue, watch, MaybeRefOrGetter} from "vue";
 
 import type { UseApiOptions, UseApiReturn, ApiRequestConfig } from "./types";
 import { useApiConfig } from "./plugin"; // <--- INJECTION
@@ -9,7 +9,7 @@ import { useApiState } from "./composables/useApiState";
 import { useAbortController } from "./composables/useAbortController";
 
 export function useApi<T = unknown, D = unknown>(
-    url: string | Ref<string>,
+    url: MaybeRefOrGetter<string | undefined>,
     options: UseApiOptions<T, D> = {},
 ): UseApiReturn<T, D> {
     const { axios, onError: globalErrorHandler, globalOptions, errorParser } = useApiConfig();
@@ -55,7 +55,7 @@ export function useApi<T = unknown, D = unknown>(
     const executeRequest = async (config?: ApiRequestConfig<D>): Promise<T | null> => {
         // Clear previous poll timer to avoid overlaps if manual execute happened
         if (pollTimer) clearTimeout(pollTimer);
-        const requestUrl = typeof url === "string" ? url : url.value;
+        const requestUrl = toValue(url);
 
         if (abortController.value) abortController.value.abort("Cancelled by new request");
         const controller = new AbortController();
@@ -86,6 +86,10 @@ export function useApi<T = unknown, D = unknown>(
         try {
             const rawData = config?.data !== undefined ? config.data : axiosConfig.data;
             const resolvedData = toValue(rawData);
+
+            if (!requestUrl) {
+                throw new Error("Request URL is missing");
+            }
 
             const response = await axios.request<T>({
                 url: requestUrl,
@@ -233,7 +237,7 @@ export function useApi<T = unknown, D = unknown>(
  * ```
  */
 export function useApiGet<T = unknown>(
-    url: string | Ref<string>,
+    url: MaybeRefOrGetter<string | undefined>,
     options?: Omit<UseApiOptions<T>, "method">,
 ): UseApiReturn<T> {
     return useApi<T>(url, { ...options, method: "GET" });
@@ -249,7 +253,7 @@ export function useApiGet<T = unknown>(
  * ```
  */
 export function useApiPost<T = unknown, D = unknown>(
-    url: string | Ref<string>,
+    url: MaybeRefOrGetter<string | undefined>,
     options?: Omit<UseApiOptions<T, D>, "method">,
 ): UseApiReturn<T, D> {
     return useApi<T, D>(url, { ...options, method: "POST" });
@@ -265,7 +269,7 @@ export function useApiPost<T = unknown, D = unknown>(
  * ```
  */
 export function useApiPut<T = unknown, D = unknown>(
-    url: string | Ref<string>,
+    url: MaybeRefOrGetter<string | undefined>,
     options?: Omit<UseApiOptions<T, D>, "method">,
 ): UseApiReturn<T, D> {
     return useApi<T, D>(url, { ...options, method: "PUT" });
@@ -281,7 +285,7 @@ export function useApiPut<T = unknown, D = unknown>(
  * ```
  */
 export function useApiPatch<T = unknown, D = unknown>(
-    url: string | Ref<string>,
+    url: MaybeRefOrGetter<string | undefined>,
     options?: Omit<UseApiOptions<T, D>, "method">,
 ): UseApiReturn<T, D> {
     return useApi<T, D>(url, { ...options, method: "PATCH" });
@@ -297,7 +301,7 @@ export function useApiPatch<T = unknown, D = unknown>(
  * ```
  */
 export function useApiDelete<T = unknown>(
-    url: string | Ref<string>,
+    url: MaybeRefOrGetter<string | undefined>,
     options?: Omit<UseApiOptions<T>, "method">,
 ): UseApiReturn<T> {
     return useApi<T>(url, { ...options, method: "DELETE" });

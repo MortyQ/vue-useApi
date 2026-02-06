@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useApi } from './useApi'
 import { createApi } from './plugin'
 import { mount } from '@vue/test-utils'
-import { defineComponent, ref, nextTick } from 'vue'
+import { defineComponent, ref, nextTick, MaybeRefOrGetter } from 'vue'
 import type { AxiosInstance } from 'axios'
 
 const mockAxios = {
@@ -15,12 +15,12 @@ const mockAxios = {
 } as unknown as AxiosInstance
 
 // Helper to run useApi within an injection context
-function mountuseApi<T = any>(options: any = {}, apiOptions: any = {}) {
+function mountuseApi<T = any>(options: any = {}, apiOptions: any = {}, url?: MaybeRefOrGetter<string | undefined>) {
     let result: any
 
     const Comp = defineComponent({
         setup() {
-            result = useApi('test-url', options)
+            result = useApi(url ?? 'test-url', options)
             return () => null
         }
     })
@@ -78,7 +78,7 @@ describe('useApi', () => {
         const responseData = { count: 1 }
         ;(mockAxios.request as any).mockResolvedValue({ data: responseData, status: 200 })
 
-        const { result } = mountuseApi({
+        mountuseApi({
             poll: 1000,
             immediate: true
         })
@@ -103,7 +103,7 @@ describe('useApi', () => {
         const responseData = { count: 1 }
         ;(mockAxios.request as any).mockResolvedValue({ data: responseData, status: 200 })
 
-        const { result } = mountuseApi({
+        mountuseApi({
             poll: { interval: 2000, whenHidden: true },
             immediate: true
         })
@@ -157,7 +157,7 @@ describe('useApi', () => {
         const filter = ref('initial')
         ;(mockAxios.request as any).mockResolvedValue({ data: {}, status: 200 })
 
-        const { result } = mountuseApi({
+        mountuseApi({
             immediate: true,
             watch: filter
         })
@@ -194,7 +194,7 @@ describe('useApi', () => {
         const responseData = { count: 1 }
         ;(mockAxios.request as any).mockResolvedValue({ data: responseData, status: 200 })
 
-        const { result } = mountuseApi({
+        mountuseApi({
             poll: 1000,
             immediate: true
         })
@@ -232,7 +232,7 @@ describe('useApi', () => {
         const responseData = { count: 1 }
         ;(mockAxios.request as any).mockResolvedValue({ data: responseData, status: 200 })
 
-        const { result } = mountuseApi({
+        mountuseApi({
             poll: { interval: 1000, whenHidden: true },
             immediate: true
         })
@@ -255,7 +255,7 @@ describe('useApi', () => {
 
         const interval = ref(5000)
 
-        const { result } = mountuseApi({
+        mountuseApi({
             poll: interval,
             immediate: true
         })
@@ -284,4 +284,40 @@ describe('useApi', () => {
         await vi.advanceTimersByTimeAsync(200)
         expect(mockAxios.request).toHaveBeenCalledTimes(4)
     })
+
+    it('should handle dynamic or undefined url', async () => {
+        const id = ref<number | undefined>(undefined)
+        // Helper to mimic usage: () => id.value ? `/users/${id.value}` : undefined
+        // Note: For this to work dynamically with useApi, we need to pass a getter function for the URL.
+
+        const { result } = mountuseApi({}, {}, () => {
+            // Pass URL as a getter
+            return id.value ? `/users/${id.value}` : undefined
+        });
+
+        // 1. Initial state: URL is undefined.
+        // Calling execute should fail gracefully and set error
+        await result.execute()
+
+        expect(result.error.value).toBeTruthy()
+        // The error might be wrapped, so check loosely or specifically if we know the structure
+        expect(result.error.value?.message || result.error.value).toContain("Request URL is missing")
+
+        // 2. Set ID
+        id.value = 123
+        await nextTick() // Reactivity update
+
+        // Now URL resolves to /users/123
+        ;(mockAxios.request as any).mockResolvedValue({ data: { id: 123 }, status: 200 })
+
+        await result.execute()
+
+        expect(mockAxios.request).toHaveBeenCalledWith(expect.objectContaining({
+            url: "/users/123",
+            method: "GET"
+        }))
+    });
+
+
+
 })

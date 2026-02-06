@@ -2,6 +2,7 @@
 import { useApi } from '@ametie/vue-muza-use';
 import {Toaster} from "vue-sonner";
 import PollingDemo from "./components/PollingDemo.vue";
+import DynamicUrlDemo from "./components/DynamicUrlDemo.vue";
 
 const { data, loading, error, execute } = useApi('/todos/1', {
   immediate: true
@@ -11,6 +12,9 @@ const { data, loading, error, execute } = useApi('/todos/1', {
 <template>
   <div>
     <PollingDemo />
+    <hr style="margin: 40px 0; border: none; border-top: 1px solid #ddd;" />
+
+    <DynamicUrlDemo />
     <hr style="margin: 40px 0; border: none; border-top: 1px solid #ddd;" />
 
     <h1>Legacy Test</h1>
