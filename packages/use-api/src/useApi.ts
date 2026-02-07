@@ -1,5 +1,5 @@
 import { debounceFn } from "./utils/debounce";
-import type {AxiosRequestConfig} from "axios";
+import { type AxiosRequestConfig, isAxiosError } from "axios";
 import { ref, getCurrentScope, onScopeDispose, toValue, watch, type MaybeRefOrGetter } from "vue";
 
 import type { UseApiOptions, UseApiReturn, ApiRequestConfig } from "./types";
@@ -102,7 +102,7 @@ export function useApi<T = unknown, D = unknown>(
                 data: resolvedData,
                 params: resolvedParams,
                 signal: controller.signal,
-                authMode: (config?.authMode || authMode) as any,
+                ...({ authMode: config?.authMode || authMode } as unknown as AxiosRequestConfig),
             } as AxiosRequestConfig);
 
             state.setData(response.data as T | null, response);
@@ -111,7 +111,7 @@ export function useApi<T = unknown, D = unknown>(
             return response.data;
 
         } catch (err: unknown) {
-            if (controller.signal.aborted || (err as any)?.code === "ERR_CANCELED") {
+            if (controller.signal.aborted || (isAxiosError(err) && err.code === "ERR_CANCELED")) {
                 wasCancelled = true;
                 return null;
             }

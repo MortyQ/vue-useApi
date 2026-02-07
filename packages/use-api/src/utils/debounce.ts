@@ -1,10 +1,10 @@
-export function debounceFn<T extends (...args: any[]) => Promise<any>>(
-    fn: T,
+export function debounceFn<A extends unknown[], R>(
+    fn: (...args: A) => Promise<R>,
     delay: number
-): (...args: Parameters<T>) => Promise<Awaited<ReturnType<T>> | undefined> {
+): (...args: A) => Promise<R | undefined> {
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-    return function (...args: Parameters<T>) {
+    return function (...args: A) {
         return new Promise((resolve) => {
             if (timeoutId) {
                 clearTimeout(timeoutId);

@@ -60,7 +60,7 @@ export interface UseApiReturn<T = unknown, D = unknown> {
 
 export interface ApiPluginOptions {
     axios: AxiosInstance;
-    onError?: (error: ApiError, originalError: any) => void;
+    onError?: (error: ApiError, originalError: unknown) => void;
     /**
      * Custom error parser to transform backend errors into ApiError format.
      * Useful if your backend has a different error structure.

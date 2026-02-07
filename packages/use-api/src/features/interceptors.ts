@@ -1,4 +1,5 @@
-import type { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosError } from "axios";
+import type { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse, AxiosError, AxiosRequestConfig } from "axios";
+import type { AuthMode } from "../types";
 import { trackAuthEvent, AuthEventType } from "./monitor";
 import { tokenManager } from "./tokenManager";
 
@@ -9,6 +10,11 @@ export interface InterceptorOptions {
     refreshUrl?: string;
     onTokenRefreshFailed?: () => void;
     extractTokens?: (response: AxiosResponse) => { accessToken: string, refreshToken?: string };
+}
+
+interface ExtendedInternalAxiosRequestConfig extends InternalAxiosRequestConfig {
+    authMode?: AuthMode;
+    _retry?: boolean;
 }
 
 interface FailedRequestQueue {
@@ -39,7 +45,7 @@ export function setupInterceptors(
 
     axiosInstance.interceptors.request.use(
         (config: InternalAxiosRequestConfig) => {
-            const extendedConfig = config as any;
+            const extendedConfig = config as ExtendedInternalAxiosRequestConfig;
             if (extendedConfig.authMode === "public") return config;
 
             const token = tokenManager.getAccessToken();
@@ -54,7 +60,7 @@ export function setupInterceptors(
     axiosInstance.interceptors.response.use(
         (response) => response,
         async (error: AxiosError) => {
-            const originalRequest = error.config as any;
+            const originalRequest = error.config as ExtendedInternalAxiosRequestConfig;
 
             if (!originalRequest || error.response?.status !== 401 || originalRequest._retry) {
                 return Promise.reject(error);
@@ -90,17 +96,16 @@ export function setupInterceptors(
             trackAuthEvent(AuthEventType.REFRESH_START, { url: originalRequest.url });
 
             try {
-                const response = await axiosInstance.post(
+                const response = await axiosInstance.post<{ accessToken?: string, access_token?: string }>(
                     refreshUrl,
                     {},
                     {
-                        // @ts-expect-error
                         authMode: "public",
                         withCredentials: true
-                    }
+                    } as AxiosRequestConfig & { authMode: AuthMode }
                 );
 
-                let accessToken = "";
+                let accessToken: string | undefined;
 
                 if (extractTokens) {
                     const tokens = extractTokens(response);

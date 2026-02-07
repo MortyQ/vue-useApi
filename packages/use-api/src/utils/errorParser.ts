@@ -1,8 +1,9 @@
+import { isAxiosError } from "axios";
 import type { ApiError } from "../types";
 
 export function parseApiError(error: unknown): ApiError {
-    if (error && typeof error === "object" && "isAxiosError" in error && (error as any).isAxiosError) {
-        const axiosError = error as any;
+    if (isAxiosError(error)) {
+        const axiosError = error;
         if (axiosError.response) {
             const { data, status } = axiosError.response;
 

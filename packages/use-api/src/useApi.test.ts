@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest'
 import { useApi } from './useApi'
 import { createApi } from './plugin'
 import { mount } from '@vue/test-utils'
 import { defineComponent, ref, nextTick, MaybeRefOrGetter } from 'vue'
 import type { AxiosInstance } from 'axios'
+import type { UseApiOptions, ApiPluginOptions, UseApiReturn } from "./types";
 
 const mockAxios = {
     request: vi.fn(),
@@ -15,8 +16,8 @@ const mockAxios = {
 } as unknown as AxiosInstance
 
 // Helper to run useApi within an injection context
-function mountuseApi<T = any>(options: any = {}, apiOptions: any = {}, url?: MaybeRefOrGetter<string | undefined>) {
-    let result: any
+function mountuseApi<T = unknown>(options: UseApiOptions<T> = {}, apiOptions: Partial<ApiPluginOptions> = {}, url?: MaybeRefOrGetter<string | undefined>) {
+    let result: UseApiReturn<T, unknown>
 
     const Comp = defineComponent({
         setup() {
@@ -36,7 +37,7 @@ function mountuseApi<T = any>(options: any = {}, apiOptions: any = {}, url?: May
         }
     })
 
-    return { result, wrapper }
+    return { result: result!, wrapper }
 }
 
 describe('useApi', () => {
@@ -53,7 +54,7 @@ describe('useApi', () => {
 
     it('should fetch data immediately', async () => {
         const responseData = { id: 1, name: 'Test' }
-        ;(mockAxios.request as any).mockResolvedValue({ data: responseData, status: 200 })
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: responseData, status: 200 })
 
         const { result } = mountuseApi({ immediate: true })
 
@@ -76,7 +77,7 @@ describe('useApi', () => {
 
     it('should poll data with interval', async () => {
         const responseData = { count: 1 }
-        ;(mockAxios.request as any).mockResolvedValue({ data: responseData, status: 200 })
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: responseData, status: 200 })
 
         mountuseApi({
             poll: 1000,
@@ -101,7 +102,7 @@ describe('useApi', () => {
 
     it('should respect poll configuration object', async () => {
         const responseData = { count: 1 }
-        ;(mockAxios.request as any).mockResolvedValue({ data: responseData, status: 200 })
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: responseData, status: 200 })
 
         mountuseApi({
             poll: { interval: 2000, whenHidden: true },
@@ -123,7 +124,7 @@ describe('useApi', () => {
 
     it('should stop polling when component unmounts', async () => {
         const responseData = { count: 1 }
-        ;(mockAxios.request as any).mockResolvedValue({ data: responseData, status: 200 })
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: responseData, status: 200 })
 
         const { wrapper } = mountuseApi({
             poll: 1000,
@@ -142,7 +143,7 @@ describe('useApi', () => {
 
     it('should handle errors correctly', async () => {
         const error = new Error('Network Error')
-        ;(mockAxios.request as any).mockRejectedValue(error)
+        ;(mockAxios.request as unknown as Mock).mockRejectedValue(error)
 
         const { result } = mountuseApi({ immediate: true })
 
@@ -155,7 +156,7 @@ describe('useApi', () => {
 
     it('should re-fetch when watched source changes', async () => {
         const filter = ref('initial')
-        ;(mockAxios.request as any).mockResolvedValue({ data: {}, status: 200 })
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: {}, status: 200 })
 
         mountuseApi({
             immediate: true,
@@ -173,7 +174,7 @@ describe('useApi', () => {
     })
 
     it('should debounce requests', async () => {
-        ;(mockAxios.request as any).mockResolvedValue({ data: {}, status: 200 })
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: {}, status: 200 })
         const { result } = mountuseApi({
             debounce: 100,
             immediate: false
@@ -192,7 +193,7 @@ describe('useApi', () => {
 
     it('should pause polling when document is hidden (default behavior)', async () => {
         const responseData = { count: 1 }
-        ;(mockAxios.request as any).mockResolvedValue({ data: responseData, status: 200 })
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: responseData, status: 200 })
 
         mountuseApi({
             poll: 1000,
@@ -230,7 +231,7 @@ describe('useApi', () => {
 
     it('should continue polling when hidden if configured', async () => {
         const responseData = { count: 1 }
-        ;(mockAxios.request as any).mockResolvedValue({ data: responseData, status: 200 })
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: responseData, status: 200 })
 
         mountuseApi({
             poll: { interval: 1000, whenHidden: true },
@@ -251,7 +252,7 @@ describe('useApi', () => {
 
     it('should restart polling when interval changes', async () => {
         const responseData = { count: 1 }
-        ;(mockAxios.request as any).mockResolvedValue({ data: responseData, status: 200 })
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: responseData, status: 200 })
 
         const interval = ref(5000)
 
@@ -308,7 +309,7 @@ describe('useApi', () => {
         await nextTick() // Reactivity update
 
         // Now URL resolves to /users/123
-        ;(mockAxios.request as any).mockResolvedValue({ data: { id: 123 }, status: 200 })
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: { id: 123 }, status: 200 })
 
         await result.execute()
 
@@ -320,7 +321,7 @@ describe('useApi', () => {
 
     it('should handle reactive params', async () => {
         const params = ref({ sort: 'asc' })
-        ;(mockAxios.request as any).mockResolvedValue({ data: {}, status: 200 })
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: {}, status: 200 })
 
         const { result } = mountuseApi({
             params,

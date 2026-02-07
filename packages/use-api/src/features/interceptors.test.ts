@@ -1,10 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
 import { setupInterceptors } from './interceptors'
 import { tokenManager } from './tokenManager'
+import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
+
+type MockAxiosInstance = AxiosInstance & Mock & {
+    post: Mock;
+    request: Mock;
+    interceptors: {
+        request: { use: Mock };
+        response: { use: Mock };
+    }
+}
 
 // Helper to create mocked axios instance
-function createMockInstance() {
-    const instance: any = {
+function createMockInstance(): MockAxiosInstance {
+    const instance = {
         interceptors: {
             request: { use: vi.fn() },
             response: { use: vi.fn() }
@@ -15,16 +25,15 @@ function createMockInstance() {
         request: vi.fn()
     }
     // Make instance callable to simulate axios(config)
-    const callable = vi.fn() as any
+    const callable = vi.fn() as unknown as MockAxiosInstance
     Object.assign(callable, instance)
     return callable
 }
 
 describe('Interceptors', () => {
-    let mockInstance: any
-    let requestInterceptor: any
-    let responseInterceptor: any
-    let errorInterceptor: any
+    let mockInstance: MockAxiosInstance
+    let requestInterceptor: (config: InternalAxiosRequestConfig) => InternalAxiosRequestConfig
+    let errorInterceptor: (error: unknown) => Promise<unknown>
 
     beforeEach(() => {
         vi.clearAllMocks()
@@ -35,16 +44,16 @@ describe('Interceptors', () => {
 
         // Capture interceptors
         // request.use(success, error) - get the success handler (first arg)
-        requestInterceptor = mockInstance.interceptors.request.use.mock.calls[0][0]
+        requestInterceptor = (mockInstance.interceptors.request.use as Mock).mock.calls[0][0]
 
         // response.use(success, error) - get the error handler (second arg)
-        errorInterceptor = mockInstance.interceptors.response.use.mock.calls[0][1]
+        errorInterceptor = (mockInstance.interceptors.response.use as Mock).mock.calls[0][1]
     })
 
     it('should inject token into headers', () => {
         tokenManager.setTokens({ accessToken: 'valid-token' })
 
-        const config = { headers: { set: vi.fn() } } as any
+        const config = { headers: { set: vi.fn() } } as unknown as InternalAxiosRequestConfig
 
         requestInterceptor(config)
 
@@ -54,7 +63,7 @@ describe('Interceptors', () => {
     it('should NOT inject token if authMode is public', () => {
         tokenManager.setTokens({ accessToken: 'valid-token' })
 
-        const config = { headers: { set: vi.fn() }, authMode: 'public' } as any
+        const config = { headers: { set: vi.fn() }, authMode: 'public' } as unknown as InternalAxiosRequestConfig
 
         requestInterceptor(config)
 
@@ -72,10 +81,10 @@ describe('Interceptors', () => {
         // Mock refresh success
         mockInstance.post.mockResolvedValue({
             data: { accessToken: 'new-token' }
-        })
+        });
 
         // Setup mockInstance to return success on retry
-        mockInstance.mockResolvedValue('success')
+        (mockInstance as unknown as Mock).mockResolvedValue('success')
 
         await errorInterceptor(error)
 
@@ -96,11 +105,11 @@ describe('Interceptors', () => {
              response: { status: 401 }
          }
 
-         let resolveRefresh: any
+         let resolveRefresh: (value: unknown) => void = () => {}
          const refreshPromise = new Promise(resolve => resolveRefresh = resolve)
 
-         mockInstance.post.mockReturnValue(refreshPromise)
-         mockInstance.mockResolvedValue('success')
+         mockInstance.post.mockReturnValue(refreshPromise);
+         (mockInstance as unknown as Mock).mockResolvedValue('success')
 
          // Trigger first 401 -> starts refresh
          const p1 = errorInterceptor(error1)
@@ -135,7 +144,7 @@ describe('Interceptors', () => {
             refreshUrl: '/refresh',
             onTokenRefreshFailed: onRefreshFailed
         })
-        errorInterceptor = mockInstance.interceptors.response.use.mock.calls[0][1]
+        errorInterceptor = (mockInstance.interceptors.response.use as Mock).mock.calls[0][1]
 
         try {
             await errorInterceptor(error)
