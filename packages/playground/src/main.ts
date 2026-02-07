@@ -9,6 +9,7 @@ const myAxios = createApiClient({
     baseURL: import.meta.env.VITE_API_URL,
     authOptions: {
         refreshUrl: "/auth/refresh",
+        onTokenRefreshed: (response) => console.log("TOKEN REFRESHED", response),
         refreshPayload: () => ({
             refreshToken: tokenManager.getRefreshToken()
         }),

@@ -10,6 +10,24 @@ export interface InterceptorOptions {
     refreshUrl?: string;
     refreshWithCredentials?: boolean;
     onTokenRefreshFailed?: () => void;
+    /**
+     * Callback after successful token refresh with access to full response
+     * Useful for:
+     * - Extracting additional user data (permissions, profile, etc)
+     * - Logging/analytics
+     * - Updating app state
+     * - Custom business logic
+     *
+     * @example
+     * ```ts
+     * onTokenRefreshed: (response) => {
+     *   const { user, permissions } = response.data;
+     *   store.commit('SET_USER', user);
+     *   analytics.track('token_refreshed', { userId: user.id });
+     * }
+     * ```
+     */
+    onTokenRefreshed?: (response: AxiosResponse) => void | Promise<void>;
     extractTokens?: (response: AxiosResponse) => { accessToken: string, refreshToken?: string };
     /**
      * Custom payload to send with refresh token request
@@ -54,6 +72,7 @@ export function setupInterceptors(
         refreshUrl = "/auth/refresh",
         refreshWithCredentials = false,
         onTokenRefreshFailed,
+        onTokenRefreshed,
         extractTokens,
         refreshPayload
     } = options;
@@ -66,6 +85,9 @@ export function setupInterceptors(
             const token = tokenManager.getAccessToken();
             if (token) {
                 config.headers.set(AUTH_HEADER, `${TOKEN_TYPE} ${token}`);
+            } else {
+                // Explicitly remove Authorization header if no token exists
+                config.headers.delete(AUTH_HEADER);
             }
             return config;
         },
@@ -146,7 +168,10 @@ export function setupInterceptors(
                 // Save both tokens (tokenManager will handle storage logic based on refreshWithCredentials)
                 tokenManager.setTokens({ accessToken, refreshToken });
 
-                axiosInstance.defaults.headers.common[AUTH_HEADER] = `${TOKEN_TYPE} ${accessToken}`;
+                // Call onTokenRefreshed callback with full response for custom logic
+                if (onTokenRefreshed) {
+                    await onTokenRefreshed(response);
+                }
 
                 trackAuthEvent(AuthEventType.REFRESH_SUCCESS);
                 processQueue(null, accessToken);

@@ -55,10 +55,7 @@ class LocalStorageTokenStorage implements TokenStorage {
     }
 
     setTokens(tokens: AuthTokens): void {
-        console.log("Setting tokens:", tokens, "storeRefreshToken:", this.storeRefreshToken);
-
         if (!tokens.accessToken) {
-            console.warn("Cannot save tokens: accessToken is required");
             return;
         }
 
@@ -67,14 +64,6 @@ class LocalStorageTokenStorage implements TokenStorage {
         if (this.storeRefreshToken) {
             if (tokens.refreshToken) {
                 localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
-                console.log("✅ Refresh token saved to localStorage");
-            } else {
-                console.warn("⚠️ refreshToken not provided but storeRefreshToken=true. Token not saved.");
-            }
-        } else {
-            console.log("ℹ️ Refresh token not saved (using httpOnly cookies, storeRefreshToken=false)");
-            if (tokens.refreshToken) {
-                console.warn("⚠️ refreshToken provided but storeRefreshToken=false. Token ignored. Check authOptions.refreshWithCredentials config.");
             }
         }
 
