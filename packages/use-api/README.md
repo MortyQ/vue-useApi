@@ -699,6 +699,20 @@ const api = createApiClient({
   withAuth: true,
   authOptions: {
     refreshUrl: '/auth/refresh',      // Default: '/auth/refresh'
+    
+    // ✨ NEW: Handle successful refresh response
+    onTokenRefreshed: (response) => {
+      // Extract additional data from refresh response
+      const { user, permissions } = response.data
+      
+      // Update app state
+      store.commit('SET_USER', user)
+      store.commit('SET_PERMISSIONS', permissions)
+      
+      // Analytics
+      analytics.track('token_refreshed', { userId: user.id })
+    },
+    
     onTokenRefreshFailed: () => {
       // Called when refresh fails (expired refresh token)
       localStorage.clear()
@@ -1009,6 +1023,9 @@ interface CreateApiClientOptions extends AxiosRequestConfig {
     refreshUrl?: string              // Default: '/auth/refresh'
     refreshWithCredentials?: boolean // Default: false (set true for httpOnly cookies)
     onTokenRefreshFailed?: () => void
+    onTokenRefreshed?: (response: AxiosResponse) => void | Promise<void> // ✨ NEW: Handle refresh response
+    extractTokens?: (response: AxiosResponse) => { accessToken: string, refreshToken?: string }
+    refreshPayload?: Record<string, unknown> | (() => Record<string, unknown> | Promise<Record<string, unknown>>)
   }
 }
 ```
