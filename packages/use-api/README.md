@@ -126,9 +126,6 @@ const { execute } = useApiPost<AuthResponse>('/auth/login', {
   }
 })
 ```
-
-> 📖 **Full guide:** See [TOKEN_MANAGER_GUIDE.md](../../TOKEN_MANAGER_GUIDE.md) for detailed documentation
-
 ---
 
 ## 🚀 Quick Start
