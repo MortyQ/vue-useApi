@@ -8,8 +8,21 @@ export const TOKEN_TYPE = "Bearer";
 
 export interface InterceptorOptions {
     refreshUrl?: string;
+    refreshWithCredentials?: boolean;
     onTokenRefreshFailed?: () => void;
     extractTokens?: (response: AxiosResponse) => { accessToken: string, refreshToken?: string };
+    /**
+     * Custom payload to send with refresh token request
+     * Can be a static object or a function that returns the payload
+     *
+     * @example
+     * ```ts
+     * refreshPayload: { deviceId: 'xxx', fingerprint: 'yyy' }
+     * // or dynamic:
+     * refreshPayload: () => ({ timestamp: Date.now() })
+     * ```
+     */
+    refreshPayload?: Record<string, unknown> | (() => Record<string, unknown> | Promise<Record<string, unknown>>);
 }
 
 interface ExtendedInternalAxiosRequestConfig extends InternalAxiosRequestConfig {
@@ -39,8 +52,10 @@ export function setupInterceptors(
 ) {
     const {
         refreshUrl = "/auth/refresh",
+        refreshWithCredentials = false,
         onTokenRefreshFailed,
-        extractTokens
+        extractTokens,
+        refreshPayload
     } = options;
 
     axiosInstance.interceptors.request.use(
@@ -96,28 +111,40 @@ export function setupInterceptors(
             trackAuthEvent(AuthEventType.REFRESH_START, { url: originalRequest.url });
 
             try {
-                const response = await axiosInstance.post<{ accessToken?: string, access_token?: string }>(
+                // Resolve refresh payload (can be static object or function)
+                let payload: Record<string, unknown> = {};
+                if (refreshPayload) {
+                    payload = typeof refreshPayload === 'function'
+                        ? await refreshPayload()
+                        : refreshPayload;
+                }
+
+                const response = await axiosInstance.post<{ accessToken?: string, access_token?: string, refreshToken?: string, refresh_token?: string }>(
                     refreshUrl,
-                    {},
+                    payload,
                     {
                         authMode: "public",
-                        withCredentials: true
+                        withCredentials: refreshWithCredentials
                     } as AxiosRequestConfig & { authMode: AuthMode }
                 );
 
                 let accessToken: string | undefined;
+                let refreshToken: string | undefined;
 
                 if (extractTokens) {
                     const tokens = extractTokens(response);
                     accessToken = tokens.accessToken;
+                    refreshToken = tokens.refreshToken;
                 } else {
                     const data = response.data;
                     accessToken = data.accessToken || data.access_token;
+                    refreshToken = data.refreshToken || data.refresh_token;
                 }
 
                 if (!accessToken) throw new Error("No access token in refresh response");
 
-                tokenManager.setTokens({ accessToken });
+                // Save both tokens (tokenManager will handle storage logic based on refreshWithCredentials)
+                tokenManager.setTokens({ accessToken, refreshToken });
 
                 axiosInstance.defaults.headers.common[AUTH_HEADER] = `${TOKEN_TYPE} ${accessToken}`;
 

@@ -31,21 +31,52 @@ export const TOKEN_EXPIRES_KEY = "tokenExpiresAt";
 
 /**
  * LocalStorage implementation of token storage
+ *
+ * Supports two modes:
+ * 1. storeRefreshToken: true (default) - Both tokens in localStorage
+ * 2. storeRefreshToken: false - Only accessToken in localStorage, refreshToken via httpOnly cookies
  */
 class LocalStorageTokenStorage implements TokenStorage {
+    private storeRefreshToken: boolean;
+
+    constructor(options: { storeRefreshToken?: boolean } = {}) {
+        this.storeRefreshToken = options.storeRefreshToken ?? true;  // Default: store in localStorage
+    }
+
     getAccessToken(): string | null {
         return localStorage.getItem(ACCESS_TOKEN_KEY);
     }
 
     getRefreshToken(): string | null {
-        return null; // Refresh token is stored in httpOnly cookie
+        if (!this.storeRefreshToken) {
+            return null; // Refresh token is stored in httpOnly cookie
+        }
+        return localStorage.getItem(REFRESH_TOKEN_KEY);
     }
 
     setTokens(tokens: AuthTokens): void {
+        console.log("Setting tokens:", tokens, "storeRefreshToken:", this.storeRefreshToken);
+
+        if (!tokens.accessToken) {
+            console.warn("Cannot save tokens: accessToken is required");
+            return;
+        }
+
         localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
 
-        // We don't store refresh token in local storage
-        // localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
+        if (this.storeRefreshToken) {
+            if (tokens.refreshToken) {
+                localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
+                console.log("✅ Refresh token saved to localStorage");
+            } else {
+                console.warn("⚠️ refreshToken not provided but storeRefreshToken=true. Token not saved.");
+            }
+        } else {
+            console.log("ℹ️ Refresh token not saved (using httpOnly cookies, storeRefreshToken=false)");
+            if (tokens.refreshToken) {
+                console.warn("⚠️ refreshToken provided but storeRefreshToken=false. Token ignored. Check authOptions.refreshWithCredentials config.");
+            }
+        }
 
         if (tokens.expiresIn) {
             const expiresAt = Date.now() + tokens.expiresIn * 1000;
@@ -55,7 +86,9 @@ class LocalStorageTokenStorage implements TokenStorage {
 
     clearTokens(): void {
         localStorage.removeItem(ACCESS_TOKEN_KEY);
-        // localStorage.removeItem(REFRESH_TOKEN_KEY);
+        if (this.storeRefreshToken) {
+            localStorage.removeItem(REFRESH_TOKEN_KEY);
+        }
         localStorage.removeItem(TOKEN_EXPIRES_KEY);
     }
 
@@ -166,7 +199,7 @@ class TokenManager {
     }
 
     /**
-     * Set storage (useful for tests)
+     * Set storage (useful for tests and configuration)
      */
     setStorage(storage: TokenStorage): void {
         this.storage = storage;
@@ -176,6 +209,6 @@ class TokenManager {
 // Export singleton instance
 export const tokenManager = new TokenManager();
 
-// Export class for tests
+// Export class for configuration and tests
 export { TokenManager, LocalStorageTokenStorage };
 

@@ -2,14 +2,14 @@
 import { ref } from 'vue'
 import { useApi } from '@ametie/vue-muza-use'
 
-const interval = ref(3000)
+const interval = ref(10000)
 const pollWhenHidden = ref(false)
 const lastUpdated = ref<string>('')
 const requestCount = ref(0)
 
 // We use a query param to ensure we can see requests in devtools,
 // though for this demo we just care about the `onSuccess` trigger.
-const { data, loading, error, execute, abort } = useApi('/todos/1', {
+const { data, loading, error, execute, abort } = useApi('/users', {
   immediate: true,
   // Reactive polling config
   poll: {
@@ -33,9 +33,9 @@ const { data, loading, error, execute, abort } = useApi('/todos/1', {
         <label>Poll Interval (ms):</label>
         <select v-model="interval">
           <option :value="0">0 (Disabled)</option>
-          <option :value="1000">1000ms</option>
           <option :value="3000">3000ms</option>
           <option :value="5000">5000ms</option>
+          <option :value="10000">10000ms</option>
         </select>
         <span>Current: {{ interval }}ms</span>
       </div>
@@ -72,7 +72,7 @@ const { data, loading, error, execute, abort } = useApi('/todos/1', {
       Error: {{ error.message }}
     </div>
 
-    <div v-if="data" class="data-preview">
+    <div v-if="data" class="data-preview" >
       <h3>Data Preview:</h3>
       <pre>{{ data }}</pre>
     </div>
@@ -188,6 +188,7 @@ button.danger:hover {
   padding: 15px;
   border-radius: 6px;
   overflow-x: auto;
+  max-height: 40vh;
 }
 
 .error {

@@ -40,6 +40,97 @@ yarn add @ametie/vue-muza-use axios
 
 ---
 
+## 🔐 Token Management
+
+The library supports **automatic token refresh** with two security modes:
+
+### Mode 1: localStorage (Default)
+```typescript
+const api = createApiClient({
+  baseURL: 'https://api.example.com',
+  authOptions: {
+    refreshUrl: '/auth/refresh',
+    refreshWithCredentials: false, // or omit (default)
+    onTokenRefreshFailed: () => router.push('/login')
+  }
+})
+```
+- ✅ Both `accessToken` and `refreshToken` stored in localStorage
+- ⚠️ Less secure (vulnerable to XSS), but easier to implement
+
+### Mode 2: httpOnly Cookies (Recommended for Production)
+```typescript
+const api = createApiClient({
+  baseURL: 'https://api.example.com',
+  authOptions: {
+    refreshUrl: '/auth/refresh',
+    refreshWithCredentials: true, // 🔑 Key parameter!
+    onTokenRefreshFailed: () => router.push('/login')
+  }
+})
+```
+- ✅ Only `accessToken` in localStorage
+- 🔒 `refreshToken` sent via httpOnly cookie (XSS protection)
+- 📡 Backend must set: `Set-Cookie: refreshToken=...; HttpOnly; Secure`
+
+### Custom Refresh Payload
+Send additional data with refresh requests:
+
+**⚠️ IMPORTANT:** Use functions for dynamic data (like tokens from storage):
+
+```typescript
+const api = createApiClient({
+  baseURL: 'https://api.example.com',
+  authOptions: {
+    refreshUrl: '/auth/refresh',
+    // ❌ WRONG - computed once at app start
+    // refreshPayload: { refreshToken: tokenManager.getRefreshToken() }
+    
+    // ✅ CORRECT - computed on each refresh
+    refreshPayload: () => ({
+      refreshToken: tokenManager.getRefreshToken(),
+      timestamp: Date.now()
+    })
+  }
+})
+```
+
+Static payload (for constants only):
+```typescript
+refreshPayload: {
+  deviceId: 'mobile-v1',
+  platform: 'ios' // constants that don't change
+}
+```
+
+Dynamic function:
+```typescript
+refreshPayload: () => ({
+  timestamp: Date.now(),
+  sessionId: getSessionId() // reads current value
+})
+```
+
+### Saving Tokens After Login
+```typescript
+import { tokenManager } from '@ametie/vue-muza-use'
+
+const { execute } = useApiPost<AuthResponse>('/auth/login', {
+  authMode: 'public',
+  onSuccess(response) {
+    tokenManager.setTokens({
+      accessToken: response.data.accessToken,
+      refreshToken: response.data.refreshToken, // optional in cookie mode
+      expiresIn: response.data.expiresIn
+    })
+  }
+})
+```
+
+> 📖 **Full guide:** See [TOKEN_MANAGER_GUIDE.md](../../TOKEN_MANAGER_GUIDE.md) for detailed documentation
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Setup Plugin (`main.ts`)
@@ -910,19 +1001,30 @@ interface CreateApiClientOptions extends AxiosRequestConfig {
   baseURL?: string
   timeout?: number
   headers?: Record<string, string>
+  withCredentials?: boolean          // Default: false
   
   // Auth features
   withAuth?: boolean                 // Default: true
   authOptions?: {
     refreshUrl?: string              // Default: '/auth/refresh'
+    refreshWithCredentials?: boolean // Default: false (set true for httpOnly cookies)
     onTokenRefreshFailed?: () => void
   }
 }
 ```
 
+**Default Configuration:**
+
+The library comes with sensible defaults:
+- `timeout: 60000` (60 seconds)
+- `headers: { "Content-Type": "application/json" }`
+- `withCredentials: false`
+- `refreshWithCredentials: false`
+
 **Example:**
 
 ```typescript
+// Standard setup (tokens in localStorage)
 const api = createApiClient({
   baseURL: 'https://api.example.com',
   timeout: 30000,
@@ -934,6 +1036,29 @@ const api = createApiClient({
     }
   }
 })
+
+// With httpOnly cookies for refresh token only
+const apiWithCookies = createApiClient({
+  baseURL: 'https://api.example.com',
+  authOptions: {
+    refreshUrl: '/auth/refresh',
+    refreshWithCredentials: true,  // 🍪 Send cookies only for refresh request
+    onTokenRefreshFailed: () => router.push('/login')
+  }
+})
+
+// With cookies for ALL requests (use with caution - CSRF risk)
+const apiWithAllCookies = createApiClient({
+  baseURL: 'https://api.example.com',
+  withCredentials: true,  // ⚠️ All requests will send cookies
+  authOptions: {
+    refreshUrl: '/auth/refresh',
+    refreshWithCredentials: true
+  }
+})
+```
+
+> 🔒 **Security Note:** Only enable `withCredentials` when necessary. Using it globally can expose you to CSRF attacks. Prefer `refreshWithCredentials: true` if you only need cookies for token refresh.
 ```
 
 ---

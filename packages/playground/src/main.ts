@@ -1,28 +1,17 @@
 import { createApp } from 'vue'
 import App from './App.vue'
-import { createApi, createApiClient,
-    setAuthMonitor, AuthEventType} from '@ametie/vue-muza-use'
+import { createApi, createApiClient, tokenManager} from '@ametie/vue-muza-use'
 import { toast } from 'vue-sonner'
 
 const app = createApp(App)
 
-setAuthMonitor((type, payload) => {
-    console.log(`📡 [Monitor] ${type}`, payload);
-    if (type === AuthEventType.REFRESH_START) {
-        console.log('🔄 Refresh process started!');
-    }
-    if (type === AuthEventType.REFRESH_SUCCESS) {
-        console.log('✅ Token refreshed successfully!');
-    }
-    if (type === AuthEventType.REFRESH_ERROR) {
-        console.log('❌ Refresh failed!', payload.error);
-    }
-});
-
 const myAxios = createApiClient({
-    baseURL: "https://jsonplaceholder.typicode.com/",
+    baseURL: import.meta.env.VITE_API_URL,
     authOptions: {
-        refreshUrl: "/posts/1",
+        refreshUrl: "/auth/refresh",
+        refreshPayload: () => ({
+            refreshToken: tokenManager.getRefreshToken()
+        }),
         onTokenRefreshFailed: () => console.log("LOGOUT"),
     }
 });
