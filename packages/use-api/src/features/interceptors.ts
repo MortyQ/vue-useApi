@@ -141,12 +141,16 @@ export function setupInterceptors(
                         : refreshPayload;
                 }
 
+                // Smart detection: if no refresh token in storage, automatically use cookies
+                // This matches the behavior of most production apps where refresh token is in httpOnly cookie
+                const shouldUseCredentials = refreshWithCredentials || !tokenManager.getRefreshToken();
+
                 const response = await axiosInstance.post<{ accessToken?: string, access_token?: string, refreshToken?: string, refresh_token?: string }>(
                     refreshUrl,
                     payload,
                     {
                         authMode: "public",
-                        withCredentials: refreshWithCredentials
+                        withCredentials: shouldUseCredentials
                     } as AxiosRequestConfig & { authMode: AuthMode }
                 );
 
@@ -163,7 +167,9 @@ export function setupInterceptors(
                     refreshToken = data.refreshToken || data.refresh_token;
                 }
 
-                if (!accessToken) throw new Error("No access token in refresh response");
+                if (!accessToken) {
+                    throw new Error("No access token in refresh response");
+                }
 
                 // Save both tokens (tokenManager will handle storage logic based on refreshWithCredentials)
                 tokenManager.setTokens({ accessToken, refreshToken });
@@ -180,6 +186,7 @@ export function setupInterceptors(
                 return axiosInstance(originalRequest);
             }
             catch (refreshError) {
+
                 trackAuthEvent(AuthEventType.REFRESH_ERROR, { error: refreshError });
                 processQueue(refreshError, null);
                 tokenManager.clearTokens();

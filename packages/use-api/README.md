@@ -71,7 +71,25 @@ const api = createApiClient({
 ```
 - ✅ Only `accessToken` in localStorage
 - 🔒 `refreshToken` sent via httpOnly cookie (XSS protection)
-- 📡 Backend must set: `Set-Cookie: refreshToken=...; HttpOnly; Secure`
+- 📡 Backend must set: `Set-Cookie: refreshToken=...; HttpOnly; Secure; SameSite=None` (for cross-origin)
+- 🎯 **Smart Auto-Detection**: If no `refreshToken` in localStorage, `withCredentials: true` is automatically enabled
+
+**⚠️ Common Issues & Solutions:**
+
+1. **Cookie not sent to backend?**
+   - Check: Browser DevTools → Application → Cookies
+   - Cookie must have: `HttpOnly`, `Secure` (for HTTPS), `SameSite=None` (for cross-origin)
+   - Cookie domain must match your request domain
+
+2. **CORS errors?**
+   - Backend must set: `Access-Control-Allow-Credentials: true`
+   - Backend must set specific origin (NOT `*`): `Access-Control-Allow-Origin: https://your-frontend.com`
+   - Frontend baseURL must match backend domain
+
+3. **401 on refresh?**
+   - Check Network tab → Refresh request → Headers
+   - Verify "Cookie" header includes your refresh token
+   - Backend logs: does it receive the cookie?
 
 ### Custom Refresh Payload
 Send additional data with refresh requests:

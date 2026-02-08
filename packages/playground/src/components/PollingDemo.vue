@@ -9,7 +9,7 @@ const requestCount = ref(0)
 
 // We use a query param to ensure we can see requests in devtools,
 // though for this demo we just care about the `onSuccess` trigger.
-const { data, loading, error, execute, abort } = useApi('/users', {
+const { data, loading, error, execute, abort } = useApi('/lists', {
   immediate: true,
   // Reactive polling config
   poll: {
