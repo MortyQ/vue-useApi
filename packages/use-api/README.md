@@ -40,113 +40,9 @@ yarn add @ametie/vue-muza-use axios
 
 ---
 
-## 🔐 Token Management
-
-The library supports **automatic token refresh** with two security modes:
-
-### Mode 1: localStorage (Default)
-```typescript
-const api = createApiClient({
-  baseURL: 'https://api.example.com',
-  authOptions: {
-    refreshUrl: '/auth/refresh',
-    refreshWithCredentials: false, // or omit (default)
-    onTokenRefreshFailed: () => router.push('/login')
-  }
-})
-```
-- ✅ Both `accessToken` and `refreshToken` stored in localStorage
-- ⚠️ Less secure (vulnerable to XSS), but easier to implement
-
-### Mode 2: httpOnly Cookies (Recommended for Production)
-```typescript
-const api = createApiClient({
-  baseURL: 'https://api.example.com',
-  authOptions: {
-    refreshUrl: '/auth/refresh',
-    refreshWithCredentials: true, // 🔑 Key parameter!
-    onTokenRefreshFailed: () => router.push('/login')
-  }
-})
-```
-- ✅ Only `accessToken` in localStorage
-- 🔒 `refreshToken` sent via httpOnly cookie (XSS protection)
-- 📡 Backend must set: `Set-Cookie: refreshToken=...; HttpOnly; Secure; SameSite=None` (for cross-origin)
-- 🎯 **Smart Auto-Detection**: If no `refreshToken` in localStorage, `withCredentials: true` is automatically enabled
-
-**⚠️ Common Issues & Solutions:**
-
-1. **Cookie not sent to backend?**
-   - Check: Browser DevTools → Application → Cookies
-   - Cookie must have: `HttpOnly`, `Secure` (for HTTPS), `SameSite=None` (for cross-origin)
-   - Cookie domain must match your request domain
-
-2. **CORS errors?**
-   - Backend must set: `Access-Control-Allow-Credentials: true`
-   - Backend must set specific origin (NOT `*`): `Access-Control-Allow-Origin: https://your-frontend.com`
-   - Frontend baseURL must match backend domain
-
-3. **401 on refresh?**
-   - Check Network tab → Refresh request → Headers
-   - Verify "Cookie" header includes your refresh token
-   - Backend logs: does it receive the cookie?
-
-### Custom Refresh Payload
-Send additional data with refresh requests:
-
-**⚠️ IMPORTANT:** Use functions for dynamic data (like tokens from storage):
-
-```typescript
-const api = createApiClient({
-  baseURL: 'https://api.example.com',
-  authOptions: {
-    refreshUrl: '/auth/refresh',
-    // ❌ WRONG - computed once at app start
-    // refreshPayload: { refreshToken: tokenManager.getRefreshToken() }
-    
-    // ✅ CORRECT - computed on each refresh
-    refreshPayload: () => ({
-      refreshToken: tokenManager.getRefreshToken(),
-      timestamp: Date.now()
-    })
-  }
-})
-```
-
-Static payload (for constants only):
-```typescript
-refreshPayload: {
-  deviceId: 'mobile-v1',
-  platform: 'ios' // constants that don't change
-}
-```
-
-Dynamic function:
-```typescript
-refreshPayload: () => ({
-  timestamp: Date.now(),
-  sessionId: getSessionId() // reads current value
-})
-```
-
-### Saving Tokens After Login
-```typescript
-import { tokenManager } from '@ametie/vue-muza-use'
-
-const { execute } = useApiPost<AuthResponse>('/auth/login', {
-  authMode: 'public',
-  onSuccess(response) {
-    tokenManager.setTokens({
-      accessToken: response.data.accessToken,
-      refreshToken: response.data.refreshToken, // optional in cookie mode
-      expiresIn: response.data.expiresIn
-    })
-  }
-})
-```
----
-
 ## 🚀 Quick Start
+
+Get started in 2 minutes with minimal configuration.
 
 ### 1. Setup Plugin (`main.ts`)
 
@@ -157,30 +53,20 @@ import App from './App.vue'
 
 const app = createApp(App)
 
-// Create configured Axios instance
+// Create API client with minimal config
 const api = createApiClient({
-  baseURL: 'https://api.example.com',
-  withAuth: true, // Automatic token injection
-  authOptions: {
-    refreshUrl: '/auth/refresh',
-    onTokenRefreshFailed: () => {
-      window.location.href = '/login'
-    }
-  }
+  baseURL: 'https://api.example.com'
 })
 
 // Install plugin
-app.use(createApi({
-  axios: api,
-  onError: (error) => {
-    console.error('API Error:', error.message)
-  }
-}))
+app.use(createApi({ axios: api }))
 
 app.mount('#app')
 ```
 
-### 2. Simple GET Request
+> 💡 **That's it!** No auth configuration needed to get started. Add it later when you need it.
+
+### 2. Your First Request
 
 ```vue
 <script setup lang="ts">
@@ -193,7 +79,7 @@ interface User {
 }
 
 const { data, loading, error } = useApi<User>('/users/1', {
-  immediate: true
+  immediate: true  // Auto-fetch on mount
 })
 </script>
 
@@ -207,29 +93,23 @@ const { data, loading, error } = useApi<User>('/users/1', {
 </template>
 ```
 
-### 3. Real-World Example: Live Search
+### 3. Live Search with Debounce
 
-This is where the library shines. Use a **getter function** for dynamic URLs, watch a ref, debounce input, and handle race conditions automatically:
+This example shows the library's power: **automatic race condition handling** and **debouncing** built-in.
 
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useApi } from '@ametie/vue-muza-use'
 
-interface Product {
-  id: number
-  name: string
-  price: number
-}
-
 const searchQuery = ref('')
 
-// 💡 Pass a getter function - no need for computed!
-const { data, loading } = useApi<Product[]>(
+// 💡 Use a getter function for dynamic URLs
+const { data, loading } = useApi(
   () => `/products/search?q=${searchQuery.value}`,
   {
-    watch: searchQuery,    // ⚡️ Auto-refetch when query changes
-    debounce: 500          // ⏱️ Wait 500ms after typing stops
+    watch: searchQuery,  // Auto-refetch when query changes
+    debounce: 500        // Wait 500ms after typing stops
   }
 )
 </script>
@@ -247,179 +127,228 @@ const { data, loading } = useApi<Product[]>(
 </template>
 ```
 
+**🎯 What just happened?**
+- No race conditions — previous searches auto-cancel
+- Debounce — waits for user to stop typing
+- TypeScript — full type safety
+- Clean code — no manual cleanup needed
+
 ---
 
-## 📖 Core Usage
+## 📖 Basic Usage
 
 ### GET Requests
 
-#### Basic Fetch
+#### Manual Execution
 ```typescript
 const { data, loading, error, execute } = useApi<User>('/users/1')
 
-// Manually trigger
+// Trigger manually (e.g., on button click)
 await execute()
 ```
 
 #### Auto-Fetch on Mount
 ```typescript
-useApi<User>('/users/1', {
-  immediate: true,
-  retry: 3,           // Retry 3 times on network failure
-  retryDelay: 1000    // Wait 1s between retries
+const { data } = useApi<User>('/users/1', {
+  immediate: true  // Fetches automatically
 })
 ```
 
-#### Dynamic URLs
-Use a **getter function** for reactive URLs - simple and efficient:
-
-```typescript
-const userId = ref(1)
-
-// ✅ Preferred: Getter function (no computed needed!)
-const { data } = useApi(() => `/users/${userId.value}`, {
-  watch: userId,
-  immediate: true
-})
-
-// Also works: computed ref
-const url = computed(() => `/users/${userId.value}`)
-const { data } = useApi(url, { watch: userId, immediate: true })
-```
-
-#### Query Parameters
-Pass `params` as static object or reactive ref:
-
+#### With Query Parameters
 ```typescript
 const filters = ref({
   status: 'active',
-  sort: 'name',
   limit: 20
 })
 
 const { data } = useApi('/users', {
-  params: filters,        // Automatically unwrapped
-  watch: filters,         // Re-fetch when filters change
-  debounce: 300
+  params: filters,    // Automatically unwrapped
+  watch: filters,     // Re-fetch when filters change
+  immediate: true
 })
-
-// URL becomes: /users?status=active&sort=name&limit=20
 ```
 
 ---
 
 ### POST/PUT/PATCH Requests
 
-#### Form Submission with Loading State
+#### Simple Form Submission
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useApi } from '@ametie/vue-muza-use'
 
-interface LoginForm {
-  email: string
-  password: string
-}
-
-interface LoginResponse {
-  token: string
-  user: { id: number; name: string }
-}
-
-const form = ref<LoginForm>({
+const form = ref({
   email: '',
   password: ''
 })
 
-const { execute, loading, error } = useApi<LoginResponse>('/auth/login', {
+const { execute, loading, error } = useApi('/auth/login', {
   method: 'POST',
-  authMode: 'public',     // 👈 Skip token injection for login
-  data: form,             // Ref is auto-unwrapped
+  data: form,  // Ref is auto-unwrapped
   onSuccess: (response) => {
-    localStorage.setItem('token', response.data.token)
-    router.push('/dashboard')
+    console.log('Logged in!', response.data)
   }
 })
-
-const handleSubmit = async () => {
-  await execute()
-}
 </script>
 
 <template>
-  <form @submit.prevent="handleSubmit">
-    <input v-model="form.email" type="email" :disabled="loading" />
-    <input v-model="form.password" type="password" :disabled="loading" />
-    
-    <button type="submit" :disabled="loading">
+  <form @submit.prevent="execute">
+    <input v-model="form.email" type="email" />
+    <input v-model="form.password" type="password" />
+    <button :disabled="loading">
       {{ loading ? 'Signing in...' : 'Sign In' }}
     </button>
-    
-    <p v-if="error" class="error">{{ error.message }}</p>
+    <p v-if="error">{{ error.message }}</p>
   </form>
 </template>
 ```
 
-#### Update with Optimistic UI
+---
+
+## 🎯 Core Features
+
+### Watch & Auto-Refetch
+
+Watch refs and automatically refetch when they change. Perfect for filters, search, and dynamic content.
+
+#### Single Dependency
 ```typescript
-const { execute: updateProfile } = useApi('/user/profile', {
+const userId = ref(1)
+
+const { data } = useApi(() => `/users/${userId.value}`, {
+  watch: userId,
+  immediate: true
+})
+
+// Change userId → automatic refetch
+userId.value = 2
+```
+
+#### Multiple Dependencies
+```typescript
+const searchQuery = ref('')
+const category = ref('all')
+
+const { data } = useApi(
+  () => `/products?q=${searchQuery.value}&category=${category.value}`,
+  {
+    watch: [searchQuery, category],
+    debounce: 500
+  }
+)
+```
+
+#### Auto-Save Form
+```typescript
+const settings = ref({
+  theme: 'dark',
+  notifications: true
+})
+
+useApi('/user/settings', {
   method: 'PUT',
+  data: settings,
+  watch: settings,    // Deep watch by default
+  debounce: 1000,     // Save 1s after changes stop
+  onSuccess: () => toast.success('Saved!')
+})
+```
+
+---
+
+### Polling (Background Updates)
+
+Keep data fresh with smart polling. Automatically pauses when browser tab is hidden.
+
+#### Simple Polling
+```typescript
+const { data } = useApi('/notifications', {
+  immediate: true,
+  poll: 5000  // Fetch every 5 seconds
+})
+```
+
+#### Dynamic Polling Control
+```typescript
+const pollInterval = ref(3000)
+
+const { data } = useApi('/live-feed', {
+  poll: pollInterval,
+  immediate: true
+})
+
+// Stop polling
+pollInterval.value = 0
+
+// Resume with different interval
+pollInterval.value = 5000
+```
+
+---
+
+### Error Handling
+
+#### Per-Request Error Handling
+```typescript
+const { error, execute } = useApi('/users', {
+  onError: (error) => {
+    if (error.status === 404) {
+      toast.error('User not found')
+    } else {
+      toast.error('Something went wrong')
+    }
+  },
+  skipErrorNotification: true  // Skip global handler
+})
+```
+
+#### Retry on Failure
+```typescript
+useApi('/flaky-endpoint', {
+  immediate: true,
+  retry: 3,         // Retry 3 times
+  retryDelay: 1000  // Wait 1s between retries
+})
+```
+
+---
+
+### Loading States
+
+#### Per-Request Loading
+```typescript
+const { data: user, loading: userLoading } = useApi('/user')
+const { data: posts, loading: postsLoading } = useApi('/posts')
+
+// Each request tracks its own loading state
+```
+
+#### Lifecycle Hooks
+```typescript
+const { execute } = useApi('/analytics', {
   onBefore: () => {
-    // Show optimistic update
-    localProfile.value = { ...localProfile.value, ...changes }
+    loadingBar.start()
   },
   onSuccess: (response) => {
-    toast.success('Profile updated!')
+    console.log('Success!', response.data)
   },
-  onError: () => {
-    // Rollback on error
-    localProfile.value = originalProfile
+  onError: (error) => {
+    console.error('Failed:', error.message)
+  },
+  onFinish: () => {
+    loadingBar.finish()  // Always called
   }
 })
 ```
 
 ---
 
-### Auto-Refetching with Watch
+## 📊 Real-World Examples
 
-Watch reactive dependencies and auto-refetch when they change. Perfect for filters, search, and dynamic content.
-
-#### Live Search (Debounced)
+### Data Table with Pagination & Sorting
 ```vue
 <script setup lang="ts">
-const searchQuery = ref('')
-const category = ref('all')
-
-// Use getter function for dynamic URL construction
-const { data, loading } = useApi<Product[]>(
-  () => `/products?q=${searchQuery.value}&category=${category.value}`,
-  {
-    watch: [searchQuery, category],  // Watch multiple refs
-    debounce: 500                    // Debounce search input
-  }
-)
-</script>
-
-<template>
-  <input v-model="searchQuery" placeholder="Search..." />
-  <select v-model="category">
-    <option value="all">All</option>
-    <option value="electronics">Electronics</option>
-  </select>
-  
-  <ProductList :products="data" :loading="loading" />
-</template>
-```
-
-#### Data Table with Pagination & Sorting
-```vue
-<script setup lang="ts">
-interface PaginatedResponse<T> {
-  data: T[]
-  total: number
-  page: number
-}
-
 const page = ref(1)
 const sortBy = ref('created_at')
 const sortOrder = ref<'asc' | 'desc'>('desc')
@@ -431,29 +360,20 @@ const params = computed(() => ({
   per_page: 20
 }))
 
-const { data, loading } = useApi<PaginatedResponse<Order>>('/orders', {
+const { data, loading } = useApi('/orders', {
   params,
-  watch: params,      // Auto-refetch when any param changes
+  watch: params,
   immediate: true
 })
-
-const handleSort = (column: string) => {
-  if (sortBy.value === column) {
-    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
-  } else {
-    sortBy.value = column
-    sortOrder.value = 'desc'
-  }
-}
 </script>
 
 <template>
   <table>
     <thead>
       <tr>
-        <th @click="handleSort('id')">ID</th>
-        <th @click="handleSort('created_at')">Date</th>
-        <th @click="handleSort('total')">Total</th>
+        <th @click="sortBy = 'id'">ID</th>
+        <th @click="sortBy = 'created_at'">Date</th>
+        <th @click="sortBy = 'total'">Total</th>
       </tr>
     </thead>
     <tbody v-if="!loading">
@@ -465,128 +385,50 @@ const handleSort = (column: string) => {
     </tbody>
   </table>
   
-  <Pagination 
-    v-model="page" 
-    :total="data?.total"
-    :loading="loading"
-  />
+  <Pagination v-model="page" :total="data?.total" />
 </template>
 ```
 
-#### Auto-Save Form
+### Optimistic UI Updates
 ```typescript
-const settings = ref({
-  theme: 'dark',
-  notifications: true,
-  language: 'en'
-})
-
-useApi('/user/settings', {
+const { execute: updateProfile } = useApi('/user/profile', {
   method: 'PUT',
-  data: settings,
-  watch: settings,        // Deep watch by default
-  debounce: 1000,         // Save 1s after changes stop
-  onSuccess: () => {
-    toast.success('Settings saved')
+  onBefore: () => {
+    // Show update immediately
+    localProfile.value = { ...localProfile.value, ...changes }
+  },
+  onError: () => {
+    // Rollback on error
+    localProfile.value = originalProfile
+    toast.error('Update failed')
   }
 })
 ```
 
----
-
-### Auto-Polling (Background Updates)
-
-Keep data fresh with intelligent polling. Automatically pauses when tab is hidden (configurable).
-
-#### Simple Polling
+### Request Cancellation
 ```typescript
-// Fetch notifications every 5 seconds
-const { data } = useApi<Notification[]>('/notifications', {
-  immediate: true,
-  poll: 5000
-})
-```
-
-#### Smart Polling with Controls
-```typescript
-const { data, loading } = useApi('/stock-prices', {
-  immediate: true,
-  poll: {
-    interval: 1000,
-    whenHidden: false    // ⚠️ Pause when tab is hidden (default)
-  }
-})
-```
-
-#### Dynamic Polling Control
-```typescript
-const pollInterval = ref(3000)
-
-// Start/stop polling by changing the ref
-const { data } = useApi('/live-feed', {
-  poll: pollInterval,
-  immediate: true
-})
-
-// Stop polling
-const stopPolling = () => pollInterval.value = 0
-
-// Resume with 5s interval
-const startPolling = () => pollInterval.value = 5000
-```
-
----
-
-### Race Condition Prevention
-
-#### Global Abort Controller
-Cancel all pending requests in a scope when filters change. By default, all requests subscribe to the global abort controller:
-
-```vue
-<script setup lang="ts">
 import { useAbortController } from '@ametie/vue-muza-use'
-
-const filters = ref({ category: 'all', priceMin: 0, priceMax: 1000 })
-
-// 💡 useGlobalAbort: true by default - automatically subscribed
-const { data: products } = useApi('/products', {
-  params: filters
-})
-
-const { data: stats } = useApi('/products/stats', {
-  params: filters
-})
 
 const { abortAll } = useAbortController()
 
+// Multiple requests
+const { data: products } = useApi('/products', { params: filters })
+const { data: stats } = useApi('/stats', { params: filters })
+
+// Cancel all when filters reset
 const resetFilters = () => {
-  abortAll()    // 🛑 Cancel both pending requests
-  filters.value = { category: 'all', priceMin: 0, priceMax: 1000 }
+  abortAll()  // 🛑 Cancel both requests
+  filters.value = { /* defaults */ }
 }
-
-// To opt-out of global abort:
-const { data: independent } = useApi('/independent-request', {
-  useGlobalAbort: false  // This request won't be cancelled by abortAll()
-})
-</script>
 ```
 
-#### Per-Request Abort
-```typescript
-const { execute, abort } = useApi('/long-running-task')
-
-// Start
-execute()
-
-// Cancel if needed
-setTimeout(() => abort('User cancelled'), 5000)
-```
+---
 
 ## ⚙️ Advanced Configuration
 
 ### Custom Axios Instance
 
-If you need full control over Axios configuration, create your own instance:
+Full control over Axios configuration:
 
 ```typescript
 import axios from 'axios'
@@ -595,14 +437,12 @@ import { createApi } from '@ametie/vue-muza-use'
 const customAxios = axios.create({
   baseURL: 'https://api.example.com',
   timeout: 30000,
-  headers: {
-    'X-Custom-Header': 'value'
-  }
+  headers: { 'X-Custom-Header': 'value' }
 })
 
-// Add your own interceptors
+// Add custom interceptors
 customAxios.interceptors.request.use((config) => {
-  // Custom logic
+  // Your logic
   return config
 })
 
@@ -611,42 +451,36 @@ app.use(createApi({ axios: customAxios }))
 
 ---
 
-### Error Handling
+### Global Error Handler
 
-#### Custom Error Parser
-
-Every backend returns errors differently. Normalize them into a standard format:
+Normalize errors from different backend formats:
 
 ```typescript
-import { createApi } from '@ametie/vue-muza-use'
-
 app.use(createApi({
   axios: api,
+  
+  // Global error handler
+  onError: (error) => {
+    toast.error(error.message)
+  },
+  
+  // Error parser (normalize backend responses)
   errorParser: (error: any) => {
     const response = error.response?.data
     
-    // Laravel/Rails validation errors
+    // Laravel validation errors
     if (response?.errors) {
       return {
         message: 'Validation Failed',
         status: error.response.status,
         code: 'VALIDATION_ERROR',
-        errors: response.errors // { email: ['Invalid email format'] }
+        errors: response.errors
       }
     }
     
-    // Custom API format
-    if (response?.error?.message) {
-      return {
-        message: response.error.message,
-        status: error.response?.status || 500,
-        code: response.error.code
-      }
-    }
-    
-    // Default fallback
+    // Default format
     return {
-      message: error.message || 'An unexpected error occurred',
+      message: response?.message || error.message || 'Unknown error',
       status: error.response?.status || 500,
       details: error
     }
@@ -654,82 +488,171 @@ app.use(createApi({
 }))
 ```
 
-#### Using Errors in Components
-
-```vue
-<script setup lang="ts">
-const { data, error, execute } = useApi('/users', {
-  skipErrorNotification: true  // Skip global error handler
-})
-
-// Access structured error
-if (error.value) {
-  console.log(error.value.message)  // User-friendly message
-  console.log(error.value.status)   // HTTP status code
-  console.log(error.value.code)     // Custom error code
-  console.log(error.value.errors)   // Validation errors
-}
-</script>
-
-<template>
-  <div v-if="error" class="error-banner">
-    {{ error.message }}
-    
-    <!-- Display validation errors -->
-    <ul v-if="error.errors">
-      <li v-for="(msgs, field) in error.errors" :key="field">
-        <strong>{{ field }}:</strong> {{ msgs.join(', ') }}
-      </li>
-    </ul>
-  </div>
-</template>
-```
-
 ---
 
-### Authentication & Token Management
+## 🔐 Authentication & Token Management
 
-#### How Token Refresh Works
+> **Note:** Authentication setup is optional. Only add this if your API requires JWT tokens.
 
-The library implements a **request queue pattern** to handle token expiration gracefully:
+### Basic Auth Setup
 
-```
-1. Request fails with 401 Unauthorized
-   ↓
-2. Add request to queue & pause all new requests
-   ↓
-3. Attempt token refresh (POST to refreshUrl)
-   ↓
-4. Success? → Replay all queued requests with new token
-   Failure? → Call onTokenRefreshFailed() & reject queue
-```
-
-This happens **transparently** — your components just wait a bit longer for the response.
-
-#### Configuration
+Add authentication to your API client:
 
 ```typescript
 const api = createApiClient({
   baseURL: 'https://api.example.com',
-  withAuth: true,
+  withAuth: true,  // Enable automatic token injection
   authOptions: {
-    refreshUrl: '/auth/refresh',      // Default: '/auth/refresh'
+    refreshUrl: '/auth/refresh',
+    onTokenRefreshFailed: () => {
+      // Redirect to login when refresh fails
+      window.location.href = '/login'
+    }
+  }
+})
+```
+
+The library automatically:
+- Injects `Authorization: Bearer <token>` header
+- Refreshes expired tokens
+- Queues requests during token refresh
+- Retries failed requests after refresh
+
+---
+
+### Token Management Modes
+
+#### Mode 1: localStorage (Default)
+
+Simple setup for development or internal tools:
+
+```typescript
+const api = createApiClient({
+  baseURL: 'https://api.example.com',
+  authOptions: {
+    refreshUrl: '/auth/refresh',
+    onTokenRefreshFailed: () => router.push('/login')
+  }
+})
+```
+
+**Storage:** Both `accessToken` and `refreshToken` in localStorage  
+**Security:** ⚠️ Vulnerable to XSS attacks  
+**Use case:** Development, internal tools
+
+---
+
+#### Mode 2: httpOnly Cookies (Production)
+
+Recommended for production apps with sensitive data:
+
+```typescript
+const api = createApiClient({
+  baseURL: 'https://api.example.com',
+  authOptions: {
+    refreshUrl: '/auth/refresh',
+    refreshWithCredentials: true,  // 🔑 Send cookies for refresh
+    onTokenRefreshFailed: () => router.push('/login')
+  }
+})
+```
+
+**Storage:** Only `accessToken` in localStorage, `refreshToken` in httpOnly cookie  
+**Security:** 🔒 Protected from XSS attacks  
+**Backend requirement:** Must set `Set-Cookie` with `HttpOnly; Secure; SameSite`
+
+**Common Issues:**
+- **Cookie not sent?** Check cookie domain and `SameSite` attribute
+- **CORS error?** Backend must set `Access-Control-Allow-Credentials: true`
+- **401 on refresh?** Verify cookie is included in request headers
+
+---
+
+### Saving Tokens After Login
+
+```typescript
+import { tokenManager } from '@ametie/vue-muza-use'
+
+const { execute } = useApi('/auth/login', {
+  method: 'POST',
+  authMode: 'public',  // No auth for login endpoint
+  onSuccess(response) {
+    tokenManager.setTokens({
+      accessToken: response.data.accessToken,
+      refreshToken: response.data.refreshToken,  // Optional in cookie mode
+      expiresIn: response.data.expiresIn
+    })
     
-    // ✨ NEW: Handle successful refresh response
+    router.push('/dashboard')
+  }
+})
+```
+
+---
+
+### Public Endpoints
+
+Skip authentication for public endpoints:
+
+```typescript
+// Login (no auth needed)
+useApi('/auth/login', {
+  method: 'POST',
+  authMode: 'public',
+  data: credentials
+})
+
+// Public blog posts
+useApi('/blog/posts', {
+  authMode: 'public',
+  immediate: true
+})
+```
+
+---
+
+### Advanced: Custom Refresh Payload
+
+Send additional data with token refresh requests:
+
+```typescript
+const api = createApiClient({
+  baseURL: 'https://api.example.com',
+  authOptions: {
+    refreshUrl: '/auth/refresh',
+    
+    // ⚠️ Use function for dynamic data
+    refreshPayload: () => ({
+      refreshToken: tokenManager.getRefreshToken(),
+      deviceId: getDeviceId(),
+      timestamp: Date.now()
+    })
+  }
+})
+```
+
+---
+
+### Advanced: Token Refresh Callback
+
+Handle additional data from refresh response:
+
+```typescript
+const api = createApiClient({
+  baseURL: 'https://api.example.com',
+  authOptions: {
+    refreshUrl: '/auth/refresh',
+    
+    // Called after successful token refresh
     onTokenRefreshed: (response) => {
-      // Extract additional data from refresh response
       const { user, permissions } = response.data
       
       // Update app state
       store.commit('SET_USER', user)
       store.commit('SET_PERMISSIONS', permissions)
-      
-      // Analytics
-      analytics.track('token_refreshed', { userId: user.id })
     },
     
     onTokenRefreshFailed: () => {
-      // Called when refresh fails (expired refresh token)
       localStorage.clear()
       window.location.href = '/login'
     }
@@ -737,161 +660,7 @@ const api = createApiClient({
 })
 ```
 
-#### Token Storage
-
-The library expects you to manage token storage. Implement these utilities:
-
-```typescript
-// utils/auth.ts
-export const getAccessToken = (): string | null => {
-  return localStorage.getItem('access_token')
-}
-
-export const setAccessToken = (token: string): void => {
-  localStorage.setItem('access_token', token)
-}
-
-export const clearTokens = (): void => {
-  localStorage.removeItem('access_token')
-}
-```
-
-The `createApiClient` automatically injects `Authorization: Bearer <token>` on every request.
-
-#### Public Endpoints
-
-For endpoints that don't require authentication (login, register, public data):
-
-```typescript
-useApi('/auth/login', {
-  method: 'POST',
-  authMode: 'public',  // 👈 Skips Authorization header
-  data: credentials
-})
-```
-
-#### Monitoring Auth Events
-
-Track authentication events for debugging or analytics:
-
-```typescript
-import { setAuthMonitor } from '@ametie/vue-muza-use'
-
-setAuthMonitor((event, payload) => {
-  console.log(`[Auth Event] ${event}`, payload)
-  
-  // Events: 'token_refresh_start', 'token_refresh_success', 
-  //         'token_refresh_failed', 'token_injected'
-})
-```
-
 ---
-
-### Lifecycle Hooks
-
-Fine-grained control over request lifecycle:
-
-```typescript
-const { execute } = useApi('/analytics', {
-  onBefore: () => {
-    console.log('Request starting...')
-    loadingBar.start()
-  },
-  onSuccess: (response) => {
-    console.log('Success!', response.data)
-    analytics.track('api_success', { endpoint: '/analytics' })
-  },
-  onError: (error) => {
-    console.error('Failed:', error.message)
-    sentry.captureException(error)
-  },
-  onFinish: () => {
-    console.log('Request finished (success or error)')
-    loadingBar.finish()
-  }
-})
-```
-
-**Hook Execution Order:**
-1. `onBefore`
-2. Request execution
-3. `onSuccess` OR `onError`
-4. `onFinish` (always runs)
-
----
-
-### Retry Logic
-
-Intelligent retries with lifecycle awareness — retries stop if component unmounts:
-
-```typescript
-useApi('/flaky-endpoint', {
-  retry: 3,           // Retry up to 3 times
-  retryDelay: 1000,   // Wait 1s between attempts
-  onError: (error, attempt) => {
-    console.log(`Attempt ${attempt} failed`)
-  }
-})
-```
-
-**When retries happen:**
-- Network errors (timeouts, connection refused)
-- 5xx server errors
-- Configurable via axios retry interceptor
-
-**When retries DON'T happen:**
-- 4xx client errors (bad request, unauthorized, etc.)
-- Component is unmounted (automatic cleanup)
-
----
-
-### Global vs Local Loading States
-
-#### Local Loading (Per Request)
-```typescript
-const { data: user, loading: userLoading } = useApi('/user')
-const { data: posts, loading: postsLoading } = useApi('/posts')
-
-// Each request has its own loading state
-```
-
-#### Global Loading (Shared)
-```typescript
-const globalLoading = ref(false)
-
-useApi('/user', {
-  onBefore: () => globalLoading.value = true,
-  onFinish: () => globalLoading.value = false
-})
-
-useApi('/posts', {
-  onBefore: () => globalLoading.value = true,
-  onFinish: () => globalLoading.value = false
-})
-```
-
-#### Smart Loading (Debounced)
-Prevent loading flicker for fast responses:
-
-```typescript
-import { ref, watch } from 'vue'
-
-const loading = ref(false)
-const showLoading = ref(false)
-let timeout: ReturnType<typeof setTimeout>
-
-watch(loading, (val) => {
-  if (val) {
-    // Show loading after 200ms (skip if request is fast)
-    timeout = setTimeout(() => {
-      showLoading.value = true
-    }, 200)
-  } else {
-    clearTimeout(timeout)
-    showLoading.value = false
-  }
-})
-```
 
 ## 📚 API Reference
 
