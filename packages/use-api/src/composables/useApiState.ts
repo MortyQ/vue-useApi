@@ -20,6 +20,9 @@ import { ref, type Ref } from "vue";
 
 import type { ApiState, ApiError } from "../types";
 
+/** Input type for setData - supports direct value or updater function */
+export type SetDataInput<T> = T | null | ((prev: T | null) => T | null);
+
 export interface UseApiStateReturn<T = unknown> {
   /** Response data */
   data: Ref<T | null>
@@ -31,8 +34,16 @@ export interface UseApiStateReturn<T = unknown> {
   statusCode: Ref<number | null>
   /** Full Axios response - includes headers, status, config, etc (optional, for advanced use cases) */
   response: Ref<AxiosResponse<T> | null>
-  /** Set data and clear error */
-  setData: (newData: T | null, fullResponse?: AxiosResponse<T> | null) => void
+  /**
+   * Set data and clear error. Supports direct value or updater function.
+   * @example
+   * // Direct value
+   * setData(newUsers)
+   *
+   * // Updater function (like React's setState)
+   * setData(prev => prev?.filter(u => u.active) ?? null)
+   */
+  setData: (newData: SetDataInput<T>, fullResponse?: AxiosResponse<T> | null) => void
   /** Set error */
   setError: (newError: ApiError | null) => void
   /** Set loading state */
@@ -96,8 +107,14 @@ export function useApiState<T = unknown>(
   const response = ref<AxiosResponse<T> | null>(null) as Ref<AxiosResponse<T> | null>;
 
   // Methods
-  const setData = (newData: T | null, fullResponse?: AxiosResponse<T> | null) => {
-    data.value = newData;
+  const setData = (newDataOrUpdater: SetDataInput<T>, fullResponse?: AxiosResponse<T> | null) => {
+    // Support updater function like React's setState
+    if (typeof newDataOrUpdater === 'function') {
+      const updater = newDataOrUpdater as (prev: T | null) => T | null;
+      data.value = updater(data.value);
+    } else {
+      data.value = newDataOrUpdater;
+    }
     error.value = null; // Clear error on successful data set
     if (fullResponse) {
       response.value = fullResponse;

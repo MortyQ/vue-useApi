@@ -56,6 +56,25 @@ export interface UseApiReturn<T = unknown, D = unknown> {
     execute: (config?: ApiRequestConfig<D>) => Promise<T | null | undefined>;
     abort: (message?: string) => void;
     reset: () => void;
+    /**
+     * Manually update data. Supports direct value or updater function.
+     * Clears any existing error when called.
+     *
+     * @example
+     * // Direct value
+     * setData(newUsers)
+     *
+     * // Updater function (like React's setState)
+     * setData(prev => prev?.filter(u => u.active) ?? null)
+     *
+     * // Transform data after fetch
+     * const { data, setData } = useApi('/users', {
+     *   onSuccess: ({ data }) => {
+     *     setData(data.map(user => ({ ...user, fullName: `${user.first} ${user.last}` })))
+     *   }
+     * })
+     */
+    setData: (newData: T | null | ((prev: T | null) => T | null)) => void;
 }
 
 export interface ApiPluginOptions {

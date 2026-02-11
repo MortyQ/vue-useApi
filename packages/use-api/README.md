@@ -13,15 +13,45 @@ A production-ready composable that eliminates boilerplate and solves the hard pr
 
 ## ✨ Features
 
+**Core Features** (Get started in minutes):
 - 🎯 **Fully Type-Safe** — End-to-end TypeScript support with strict typing for requests and responses
 - 🔄 **Smart Reactivity** — Watch refs and automatically refetch when dependencies change
 - ⏱️ **Built-in Debouncing** — Perfect for search inputs and auto-save forms
 - 🛡️ **Race Condition Protection** — Global abort controller cancels stale requests automatically
-- 🔐 **JWT Token Management** — Automatic token refresh with request queueing on 401 responses
-- ♻️ **Intelligent Retries** — Lifecycle-aware retry logic that respects component unmounting
 - 📊 **Auto-Polling** — Built-in interval fetching with smart tab visibility detection
 - 🧹 **Zero Memory Leaks** — Automatic cleanup of pending requests on component unmount
+
+**Advanced Features** (When you need them):
+- ♻️ **Intelligent Retries** — Lifecycle-aware retry logic that respects component unmounting
+- 🔐 **JWT Token Management** — Automatic token refresh with request queueing on 401 responses
 - 🎛️ **Flexible Architecture** — Bring your own Axios instance with full configuration control
+
+---
+
+## 📖 Table of Contents
+
+**Getting Started:**
+- [Installation](#-installation)
+- [Quick Start](#-quick-start)
+- [Basic Usage](#-basic-usage)
+
+**Core Features:**
+- [Watch & Auto-Refetch](#watch--auto-refetch)
+- [Polling](#polling-background-updates)
+- [Error Handling](#error-handling)
+- [Loading States](#loading-states)
+- [Manual Data Updates](#manual-data-updates)
+
+**Real-World Examples:**
+- [Data Table with Pagination](#data-table-with-pagination--sorting)
+- [Request Cancellation](#request-cancellation)
+
+**Advanced:**
+- [Custom Axios Instance](#-advanced-configuration)
+- [Authentication & Tokens](#-authentication--token-management) *(Optional)*
+- [API Reference](#-api-reference)
+
+> 💡 **New to the library?** Start with [Quick Start](#-quick-start), then explore [Basic Usage](#-basic-usage). Skip authentication until you need it!
 
 ---
 
@@ -344,6 +374,108 @@ const { execute } = useApi('/analytics', {
 
 ---
 
+### Manual Data Updates
+
+Use `setData` to manually update the data ref. Supports direct values or updater functions (like React's `setState`).
+
+> 🎓 **When to use `setData`:**  
+> ✅ Adding/removing/updating items in arrays  
+> ✅ Local sorting/filtering (without refetching)  
+> ✅ Transform data in `onSuccess` (adding computed fields)
+> 
+> **When to use `computed` instead:**  
+> ✅ Completely changing data structure (e.g., API format → App format)  
+> ✅ Extracting nested data that changes the return type  
+> ✅ Complex transformations that depend on other refs
+
+#### Add/Remove/Update Items
+```typescript
+const { data, setData } = useApi<Todo[]>('/todos', { immediate: true })
+
+// Add item
+const addTodo = (newTodo: Todo) => {
+  setData(prev => prev ? [...prev, newTodo] : [newTodo])
+}
+
+// Remove item
+const removeTodo = (id: number) => {
+  setData(prev => prev?.filter(t => t.id !== id) ?? null)
+}
+
+// Update item
+const updateTodo = (id: number, updates: Partial<Todo>) => {
+  setData(prev => 
+    prev?.map(t => t.id === id ? { ...t, ...updates } : t) ?? null
+  )
+}
+```
+
+#### Sort/Filter Locally
+```typescript
+const { data, setData } = useApi<Product[]>('/products', { immediate: true })
+
+const sortByPrice = () => {
+  setData(prev => prev ? [...prev].sort((a, b) => a.price - b.price) : null)
+}
+
+const filterActive = () => {
+  setData(prev => prev?.filter(p => p.active) ?? null)
+}
+
+// Reset to original
+const resetFilters = () => execute()
+```
+
+#### Transform in `onSuccess`
+
+Use `setData` in `onSuccess` to transform data right after fetching. Two approaches:
+
+**Approach 1: Same type (recommended)**
+```typescript
+interface User {
+  id: number
+  firstName: string
+  lastName: string
+  fullName?: string  // Optional field
+}
+
+const { data, setData } = useApi<User[]>('/users', {
+  immediate: true,
+  onSuccess: ({ data: users }) => {
+    // Add computed field - still User[] type
+    setData(users.map(u => ({
+      ...u,
+      fullName: `${u.firstName} ${u.lastName}`
+    })))
+  }
+})
+```
+
+**Approach 2: Different structure (use separate computed)**
+```typescript
+interface ApiUser {
+  first_name: string
+  last_name: string
+}
+
+// If API returns different structure, use computed for transformation
+const { data: rawData } = useApi<ApiUser[]>('/users', { immediate: true })
+
+const users = computed(() => 
+  rawData.value?.map(u => ({
+    firstName: u.first_name,
+    lastName: u.last_name,
+    fullName: `${u.first_name} ${u.last_name}`
+  })) ?? []
+)
+```
+
+> 💡 **Rule of thumb:**  
+> - ✅ **Use `setData` in `onSuccess`** if you're adding/modifying fields but keeping the same base type  
+> - ✅ **Use `computed`** if you're completely changing the data structure (e.g., snake_case → camelCase)
+
+---
+
 ## 📊 Real-World Examples
 
 ### Data Table with Pagination & Sorting
@@ -389,21 +521,6 @@ const { data, loading } = useApi('/orders', {
 </template>
 ```
 
-### Optimistic UI Updates
-```typescript
-const { execute: updateProfile } = useApi('/user/profile', {
-  method: 'PUT',
-  onBefore: () => {
-    // Show update immediately
-    localProfile.value = { ...localProfile.value, ...changes }
-  },
-  onError: () => {
-    // Rollback on error
-    localProfile.value = originalProfile
-    toast.error('Update failed')
-  }
-})
-```
 
 ### Request Cancellation
 ```typescript
@@ -752,11 +869,14 @@ The main composable for making HTTP requests.
   data: Ref<T | null>              // Response data
   loading: Ref<boolean>            // Loading state
   error: Ref<ApiError | null>      // Error object
+  statusCode: Ref<number | null>   // HTTP status code
   response: Ref<AxiosResponse<T>>  // Full Axios response
   
   // Methods
   execute: (config?: AxiosRequestConfig) => Promise<T | null>
+  setData: (data: T | null | ((prev: T | null) => T | null)) => void
   abort: (reason?: string) => void
+  reset: () => void
 }
 ```
 
@@ -773,6 +893,24 @@ await execute()
 await execute({ params: { page: 2 } })
 ```
 
+#### `setData(newData)`
+Manually update the `data` ref. Supports direct values or updater functions:
+
+```typescript
+const { data, setData } = useApi<User[]>('/users')
+
+// Direct value
+setData([{ id: 1, name: 'John' }])
+
+// Updater function (like React's setState)
+setData(prev => prev ? [...prev, newUser] : [newUser])
+
+// Remove item
+setData(prev => prev?.filter(u => u.id !== userId) ?? null)
+```
+
+> **Note:** `setData` automatically clears any existing error.
+
 #### `abort(reason?)`
 Cancel the current request:
 
@@ -780,6 +918,20 @@ Cancel the current request:
 const { execute, abort } = useApi('/long-task')
 
 execute()
+
+// Cancel after 5 seconds
+setTimeout(() => abort('Timeout'), 5000)
+```
+
+#### `reset()`
+Reset all state to initial values:
+
+```typescript
+const { data, error, loading, reset } = useApi('/users')
+
+// Clear everything
+reset()
+// data.value = null, error.value = null, loading.value = false
 
 // Cancel after 5 seconds
 setTimeout(() => abort('Timeout'), 5000)

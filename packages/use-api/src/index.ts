@@ -7,7 +7,7 @@ export {
     useApiPatch,
     useApiDelete,
 } from "./useApi";
-export { useApiState } from "./composables/useApiState";
+export { useApiState, type SetDataInput } from "./composables/useApiState";
 export { useAbortController } from "./composables/useAbortController";
 export * from "./types";
 export type { ApiError } from "./types";
