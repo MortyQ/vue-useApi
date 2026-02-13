@@ -2,7 +2,11 @@ import { debounceFn } from "./utils/debounce";
 import { type AxiosRequestConfig, isAxiosError } from "axios";
 import { ref, getCurrentScope, onScopeDispose, toValue, watch, type MaybeRefOrGetter } from "vue";
 
-import type { UseApiOptions, UseApiReturn, ApiRequestConfig } from "./types";
+import type {
+    UseApiOptions,
+    UseApiReturn,
+    ApiRequestConfig,
+} from "./types";
 import { useApiConfig } from "./plugin"; // <--- INJECTION
 import { parseApiError } from "./utils/errorParser";
 import { useApiState } from "./composables/useApiState";
@@ -310,3 +314,5 @@ export function useApiDelete<T = unknown>(
 ): UseApiReturn<T> {
     return useApi<T>(url, { ...options, method: "DELETE" });
 }
+
+

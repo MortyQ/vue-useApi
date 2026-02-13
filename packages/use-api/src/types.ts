@@ -97,3 +97,92 @@ export interface AuthTokens {
     refreshToken?: string
     expiresIn?: number
 }
+
+// ============================================================================
+// Batch API Types
+// ============================================================================
+
+/**
+ * Result of a single request in a batch operation
+ */
+export interface BatchResultItem<T = unknown> {
+    /** The URL that was requested */
+    url: string;
+    /** Index in the original urls array */
+    index: number;
+    /** Whether the request succeeded */
+    success: boolean;
+    /** The response data (null if failed) */
+    data: T | null;
+    /** Error details (null if succeeded) */
+    error: ApiError | null;
+    /** HTTP status code */
+    statusCode: number | null;
+}
+
+/**
+ * Progress information for batch operations
+ */
+export interface BatchProgress {
+    /** Number of completed requests (success + failed) */
+    completed: number;
+    /** Total number of requests */
+    total: number;
+    /** Completion percentage (0-100) */
+    percentage: number;
+    /** Number of successful requests */
+    succeeded: number;
+    /** Number of failed requests */
+    failed: number;
+}
+
+/**
+ * Options for useApiBatch
+ */
+export interface UseApiBatchOptions<T = unknown, D = unknown> extends Omit<ApiRequestConfig<D>, "url"> {
+    /**
+     * If true (default), failed requests don't stop the batch.
+     * If false, first error will reject the entire batch.
+     */
+    settled?: boolean;
+    /** Maximum concurrent requests. Default: unlimited */
+    concurrency?: number;
+    /** Execute immediately on mount */
+    immediate?: boolean;
+    /** Skip individual error notifications */
+    skipErrorNotification?: boolean;
+    /** Watch sources to trigger re-execution */
+    watch?: WatchSource | WatchSource[];
+    /** Callback when a single request succeeds */
+    onItemSuccess?: (item: BatchResultItem<T>, index: number) => void;
+    /** Callback when a single request fails */
+    onItemError?: (item: BatchResultItem<T>, index: number) => void;
+    /** Callback when all requests complete */
+    onFinish?: (results: BatchResultItem<T>[]) => void;
+    /** Callback when progress updates */
+    onProgress?: (progress: BatchProgress) => void;
+}
+
+/**
+ * Return type for useApiBatch
+ */
+export interface UseApiBatchReturn<T = unknown> {
+    /** All results with their status */
+    data: Ref<BatchResultItem<T>[]>;
+    /** Only successful results' data */
+    successfulData: Ref<T[]>;
+    /** Whether any request is still loading */
+    loading: Ref<boolean>;
+    /** Aggregated error (set if all requests failed) */
+    error: Ref<ApiError | null>;
+    /** List of all errors from failed requests */
+    errors: Ref<ApiError[]>;
+    /** Progress tracking */
+    progress: Ref<BatchProgress>;
+    /** Execute the batch */
+    execute: () => Promise<BatchResultItem<T>[]>;
+    /** Abort all pending requests */
+    abort: (message?: string) => void;
+    /** Reset state to initial */
+    reset: () => void;
+}

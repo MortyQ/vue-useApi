@@ -19,6 +19,7 @@ A production-ready composable that eliminates boilerplate and solves the hard pr
 - ⏱️ **Built-in Debouncing** — Perfect for search inputs and auto-save forms
 - 🛡️ **Race Condition Protection** — Global abort controller cancels stale requests automatically
 - 📊 **Auto-Polling** — Built-in interval fetching with smart tab visibility detection
+- 🚀 **Batch Requests** — Execute multiple requests in parallel with progress tracking
 - 🧹 **Zero Memory Leaks** — Automatic cleanup of pending requests on component unmount
 
 **Advanced Features** (When you need them):
@@ -45,6 +46,7 @@ A production-ready composable that eliminates boilerplate and solves the hard pr
 **Real-World Examples:**
 - [Data Table with Pagination](#data-table-with-pagination--sorting)
 - [Request Cancellation](#request-cancellation)
+- [Batch Requests](#batch-requests)
 
 **Advanced:**
 - [Custom Axios Instance](#-advanced-configuration)
@@ -537,6 +539,219 @@ const resetFilters = () => {
   abortAll()  // 🛑 Cancel both requests
   filters.value = { /* defaults */ }
 }
+```
+
+---
+
+### Batch Requests
+
+Execute multiple API requests in parallel with full reactive state, progress tracking, and error tolerance.
+
+#### Basic Usage
+
+```typescript
+import { useApiBatch } from '@ametie/vue-muza-use'
+
+interface User {
+  id: number
+  name: string
+}
+
+const { 
+  successfulData,  // Ref<User[]> - only successful results
+  loading,         // Ref<boolean>
+  progress,        // Ref<{ completed, total, percentage, succeeded, failed }>
+  execute 
+} = useApiBatch<User>([
+  '/users/1',
+  '/users/2',
+  '/users/3'
+])
+
+await execute()
+console.log(successfulData.value)  // [User, User, User]
+console.log(progress.value)        // { completed: 3, total: 3, percentage: 100, succeeded: 3, failed: 0 }
+```
+
+#### Error Tolerance (Default)
+
+By default, `useApiBatch` uses `settled: true` — failed requests don't stop the batch:
+
+```typescript
+const { 
+  successfulData, 
+  errors,    // Ref<ApiError[]> - all errors
+  progress,
+  execute 
+} = useApiBatch<User>([
+  '/users/1',
+  '/users/999',  // Will fail (404)
+  '/users/3'
+])
+
+await execute()
+
+console.log(successfulData.value.length)  // 2 (successful)
+console.log(errors.value.length)          // 1 (failed)
+console.log(progress.value)               // { succeeded: 2, failed: 1, ... }
+```
+
+#### Strict Mode
+
+Fail immediately on first error:
+
+```typescript
+const { execute } = useApiBatch<User>(urls, { 
+  settled: false  // First error will reject the entire batch
+})
+
+try {
+  await execute()
+} catch (error) {
+  console.log('Batch failed:', error.message)
+}
+```
+
+#### With Progress Tracking
+
+Perfect for loading indicators and progress bars:
+
+```vue
+<script setup lang="ts">
+const { loading, progress, execute } = useApiBatch<User>(urls, {
+  onProgress: (p) => {
+    console.log(`${p.percentage}% complete (${p.succeeded} ok, ${p.failed} failed)`)
+  }
+})
+</script>
+
+<template>
+  <div v-if="loading">
+    <div class="progress-bar">
+      <div :style="{ width: progress.percentage + '%' }"></div>
+    </div>
+    <span>{{ progress.completed }} / {{ progress.total }}</span>
+  </div>
+</template>
+```
+
+#### Concurrency Limit
+
+Control how many requests run in parallel (useful for rate limiting):
+
+```typescript
+// Only 3 requests at a time
+const { execute } = useApiBatch<User>(hundredUrls, {
+  concurrency: 3
+})
+```
+
+#### Reactive URLs
+
+URLs can be reactive — use refs or computed:
+
+```typescript
+const userIds = ref([1, 2, 3])
+const urls = computed(() => userIds.value.map(id => `/users/${id}`))
+
+const { successfulData, execute } = useApiBatch<User>(urls, {
+  immediate: true  // Execute on mount
+})
+
+// When userIds changes, call execute() to refetch
+watch(userIds, () => execute())
+```
+
+#### Auto Re-Execute with Watch
+
+```typescript
+const filters = ref({ status: 'active' })
+
+const { data } = useApiBatch<User>(urls, {
+  watch: filters,     // Re-execute when filters change
+  immediate: true
+})
+```
+
+#### Item-Level Callbacks
+
+```typescript
+const { execute } = useApiBatch<User>(urls, {
+  onItemSuccess: (item, index) => {
+    console.log(`✅ [${index}] Loaded: ${item.url}`)
+  },
+  onItemError: (item, index) => {
+    console.log(`❌ [${index}] Failed: ${item.url}`, item.error?.message)
+  },
+  onFinish: (results) => {
+    console.log(`Batch complete: ${results.length} items processed`)
+  }
+})
+```
+
+#### Full Return Type
+
+```typescript
+const {
+  data,            // Ref<BatchResultItem<T>[]> - all results with metadata
+  successfulData,  // Ref<T[]> - only successful data (computed)
+  loading,         // Ref<boolean>
+  error,           // Ref<ApiError | null> - set if ALL requests failed
+  errors,          // Ref<ApiError[]> - all individual errors
+  progress,        // Ref<BatchProgress>
+  execute,         // () => Promise<BatchResultItem<T>[]>
+  abort,           // (message?: string) => void
+  reset            // () => void
+} = useApiBatch<User>(urls)
+```
+
+#### BatchResultItem Structure
+
+Each item in `data` contains:
+
+```typescript
+interface BatchResultItem<T> {
+  url: string           // The requested URL
+  index: number         // Position in original array
+  success: boolean      // Whether request succeeded
+  data: T | null        // Response data (null if failed)
+  error: ApiError | null // Error details (null if succeeded)
+  statusCode: number | null
+}
+```
+
+#### Real-World Example: Dashboard Loader
+
+```vue
+<script setup lang="ts">
+const dashboardUrls = [
+  '/api/stats',
+  '/api/recent-orders',
+  '/api/notifications',
+  '/api/user-activity'
+]
+
+const { 
+  data: results, 
+  loading, 
+  progress,
+  execute 
+} = useApiBatch(dashboardUrls, {
+  immediate: true,
+  onProgress: (p) => console.log(`Dashboard loading: ${p.percentage}%`)
+})
+
+// Extract individual data
+const stats = computed(() => results.value.find(r => r.url.includes('stats'))?.data)
+const orders = computed(() => results.value.find(r => r.url.includes('orders'))?.data)
+</script>
+
+<template>
+  <div v-if="loading" class="loading">
+    Loading dashboard... {{ progress.percentage }}%
+  </div>
+  <Dashboard v-else :stats="stats" :orders="orders" />
+</template>
 ```
 
 ---
@@ -1047,6 +1262,89 @@ app.use(createApi({
     }
   }
 }))
+```
+
+---
+
+### `useApiBatch<T>(urls, options)`
+
+Execute multiple API requests in parallel with full reactive state.
+
+**Type Parameters:**
+- `T` — Response data type for each request
+
+**Arguments:**
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `urls` | `MaybeRefOrGetter<string[]>` | Array of API endpoints. Can be static array, ref, or getter. |
+| `options` | `UseApiBatchOptions<T>` | Configuration object (see below). |
+
+---
+
+#### Batch Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `settled` | `boolean` | `true` | If `true`, failed requests don't stop the batch. If `false`, first error rejects entire batch. |
+| `concurrency` | `number` | `undefined` | Max parallel requests. Default: unlimited. |
+| `immediate` | `boolean` | `false` | Auto-execute on mount. |
+| `skipErrorNotification` | `boolean` | `true` | Skip global error handler for individual failures. |
+| `watch` | `WatchSource \| WatchSource[]` | `undefined` | Re-execute when sources change. |
+
+**Callbacks:**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `onItemSuccess` | `(item: BatchResultItem<T>, index: number) => void` | Called when individual request succeeds. |
+| `onItemError` | `(item: BatchResultItem<T>, index: number) => void` | Called when individual request fails. |
+| `onProgress` | `(progress: BatchProgress) => void` | Called when progress updates. |
+| `onFinish` | `(results: BatchResultItem<T>[]) => void` | Called when all requests complete. |
+
+---
+
+#### Batch Return Values
+
+```typescript
+{
+  // State
+  data: Ref<BatchResultItem<T>[]>  // All results with metadata
+  successfulData: Ref<T[]>         // Only successful data (computed)
+  loading: Ref<boolean>            // True while any request pending
+  error: Ref<ApiError | null>      // Set if ALL requests failed
+  errors: Ref<ApiError[]>          // All individual errors
+  progress: Ref<BatchProgress>     // Progress tracking
+  
+  // Methods
+  execute: () => Promise<BatchResultItem<T>[]>
+  abort: (message?: string) => void
+  reset: () => void
+}
+```
+
+#### `BatchProgress`
+
+```typescript
+interface BatchProgress {
+  completed: number   // Requests finished (success + failed)
+  total: number       // Total requests
+  percentage: number  // 0-100
+  succeeded: number   // Successful requests
+  failed: number      // Failed requests
+}
+```
+
+#### `BatchResultItem<T>`
+
+```typescript
+interface BatchResultItem<T> {
+  url: string              // Requested URL
+  index: number            // Position in original array
+  success: boolean         // Whether succeeded
+  data: T | null           // Response data
+  error: ApiError | null   // Error if failed
+  statusCode: number | null
+}
 ```
 
 ---

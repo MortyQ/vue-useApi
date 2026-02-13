@@ -1,5 +1,4 @@
 <script setup lang="ts">
-
 import {computed, reactive, ref} from "vue";
 import { useApiPost, tokenManager } from "@ametie/vue-muza-use";
 import PollingDemo from "./PollingDemo.vue";

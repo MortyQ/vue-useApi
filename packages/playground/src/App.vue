@@ -6,12 +6,14 @@ import DynamicUrlDemo from "./components/DynamicUrlDemo.vue";
 import LoginForm from "./components/LoginForm.vue";
 import {computed} from "vue";
 import {tokenManager} from "@ametie/vue-muza-use";
+import PromiseAllDemo from "./components/PromiseAllDemo.vue";
 
 </script>
 
 <template>
   <div>
     <login-form/>
+    <promise-all-demo/>
 <!--    <PollingDemo />-->
 <!--    <hr style="margin: 40px 0; border: none; border-top: 1px solid #ddd;" />-->
 
