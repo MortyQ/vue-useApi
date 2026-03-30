@@ -133,7 +133,6 @@ export function useApi<T = unknown, D = unknown>(
             onError?.(apiError);
 
             // Retry logic here (insert your retryRequest function)
-
             return null;
         } finally {
             if (globalAbortHandler && subscribedSignal) subscribedSignal.removeEventListener("abort", globalAbortHandler);
