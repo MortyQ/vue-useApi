@@ -231,10 +231,29 @@ export function useApi<T = unknown, D = unknown>(
         state.setLoading(false);
     };
 
+    // Flag used by ignoreUpdates() to temporarily suppress watch-triggered execution.
+    let ignoreFlag = false;
+
+    /**
+     * Run `updater` without triggering the watch-based auto re-execution.
+     * Synchronous only — reactive changes made after an `await` inside the
+     * updater will NOT be suppressed (the flag resets after the sync portion).
+     * Safe to call when no `watch` option is configured (no-op, updater still runs).
+     */
+    const ignoreUpdates = (updater: () => void): void => {
+        ignoreFlag = true;
+        try {
+            updater();
+        } finally {
+            ignoreFlag = false;
+        }
+    };
+
     if (options.watch) {
         watch(options.watch, () => {
+            if (ignoreFlag) return;
             execute();
-        }, { deep: true });
+        }, { deep: true, flush: 'sync' });
     }
 
     if (getCurrentScope()) {
@@ -289,7 +308,7 @@ export function useApi<T = unknown, D = unknown>(
          }, { deep: true });
     }
 
-    return { ...state, execute, abort, reset };
+    return { ...state, execute, abort, reset, ignoreUpdates };
 }
 
 /**

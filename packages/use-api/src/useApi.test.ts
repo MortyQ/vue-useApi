@@ -844,3 +844,144 @@ describe('debounce — cancelled call side-effects', () => {
     it.todo('debounce + watch — rapid ref changes produce single request; intermediate cancellation does not trigger watch error handler')
     it.todo('component unmount during debounce wait — no state updates after unmount (timer fires on unmounted component)')
 })
+
+describe('ignoreUpdates', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+        vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+        vi.useRealTimers()
+        vi.clearAllMocks()
+    })
+
+    it('suppresses watch-triggered execution when reactive ref changes inside ignoreUpdates', async () => {
+        const filter = ref('initial')
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: {}, status: 200 })
+
+        const { result } = mountuseApi({ watch: filter })
+
+        await nextTick()
+        expect(mockAxios.request).not.toHaveBeenCalled()
+
+        result.ignoreUpdates(() => {
+            filter.value = 'changed'
+        })
+
+        await nextTick()
+        expect(mockAxios.request).not.toHaveBeenCalled()
+    })
+
+    it('watch still triggers execute for changes made outside ignoreUpdates', async () => {
+        const filter = ref('initial')
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: {}, status: 200 })
+
+        mountuseApi({ watch: filter })
+
+        await nextTick()
+        expect(mockAxios.request).not.toHaveBeenCalled()
+
+        filter.value = 'changed'
+        await nextTick()
+
+        expect(mockAxios.request).toHaveBeenCalledTimes(1)
+    })
+
+    it('actually runs the updater and applies reactive mutations', async () => {
+        const filter = ref('initial')
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: {}, status: 200 })
+
+        const { result } = mountuseApi({ watch: filter })
+
+        result.ignoreUpdates(() => {
+            filter.value = 'mutated'
+        })
+
+        expect(filter.value).toBe('mutated')
+    })
+
+    it('re-enables watch after ignoreUpdates completes', async () => {
+        const filter = ref('initial')
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: {}, status: 200 })
+
+        const { result } = mountuseApi({ watch: filter })
+
+        result.ignoreUpdates(() => {
+            filter.value = 'suppressed'
+        })
+        await nextTick()
+        expect(mockAxios.request).not.toHaveBeenCalled()
+
+        // Normal change after ignoreUpdates — should trigger execute
+        filter.value = 'normal'
+        await nextTick()
+        expect(mockAxios.request).toHaveBeenCalledTimes(1)
+    })
+
+    it('suppresses multiple reactive changes in a single ignoreUpdates call', async () => {
+        const page = ref(1)
+        const search = ref('')
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: {}, status: 200 })
+
+        const { result } = mountuseApi({ watch: [page, search] })
+
+        result.ignoreUpdates(() => {
+            page.value = 2
+            search.value = 'john'
+        })
+
+        await nextTick()
+        expect(mockAxios.request).not.toHaveBeenCalled()
+    })
+
+    it('is safe to call when no watch option is configured — updater runs without error', () => {
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: {}, status: 200 })
+
+        const sideEffect = ref(0)
+        const { result } = mountuseApi({})
+
+        expect(() => {
+            result.ignoreUpdates(() => {
+                sideEffect.value = 42
+            })
+        }).not.toThrow()
+
+        expect(sideEffect.value).toBe(42)
+    })
+
+    it('resets the ignore flag even if the updater throws', async () => {
+        const filter = ref('initial')
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: {}, status: 200 })
+
+        const { result } = mountuseApi({ watch: filter })
+
+        expect(() => {
+            result.ignoreUpdates(() => {
+                throw new Error('updater error')
+            })
+        }).toThrow('updater error')
+
+        // Flag must be reset — subsequent watch changes should trigger execute
+        filter.value = 'after-throw'
+        await nextTick()
+        expect(mockAxios.request).toHaveBeenCalledTimes(1)
+    })
+
+    it('allows manual execute() after ignoreUpdates to send a single request with new values', async () => {
+        const filter = ref('initial')
+        ;(mockAxios.request as unknown as Mock).mockResolvedValue({ data: {}, status: 200 })
+
+        const { result } = mountuseApi({ watch: filter })
+
+        result.ignoreUpdates(() => {
+            filter.value = 'batch-updated'
+        })
+
+        await nextTick()
+        expect(mockAxios.request).not.toHaveBeenCalled()
+
+        await result.execute()
+        expect(mockAxios.request).toHaveBeenCalledTimes(1)
+    })
+})

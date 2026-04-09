@@ -1,4 +1,4 @@
-# Vue Muza Use 🎹
+# @ametie/vue-muza-use 🎹
 
 [![npm version](https://img.shields.io/npm/v/@ametie/vue-muza-use.svg?style=flat-square)](https://www.npmjs.com/package/@ametie/vue-muza-use)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
@@ -21,9 +21,10 @@ A production-ready composable that eliminates boilerplate and solves the hard pr
 - 📊 **Auto-Polling** — Built-in interval fetching with smart tab visibility detection
 - 🚀 **Batch Requests** — Execute multiple requests in parallel with progress tracking
 - 🧹 **Zero Memory Leaks** — Automatic cleanup of pending requests on component unmount
+- 🔕 **ignoreUpdates** — Atomic updates without triggering intermediate requests
 
 **Advanced Features** (When you need them):
-- ♻️ **Intelligent Retries** — Lifecycle-aware retry logic that respects component unmounting
+- ♻️ **Intelligent Retries** — Lifecycle-aware retry logic with configurable status codes
 - 🔐 **JWT Token Management** — Automatic token refresh with request queueing on 401 responses
 - 🎛️ **Flexible Architecture** — Bring your own Axios instance with full configuration control
 
@@ -38,10 +39,12 @@ A production-ready composable that eliminates boilerplate and solves the hard pr
 
 **Core Features:**
 - [Watch & Auto-Refetch](#watch--auto-refetch)
-- [Polling](#polling-background-updates)
+  - [ignoreUpdates — Atomic Updates Without Refetch](#ignoreupdates--atomic-updates-without-refetch)
+- [Polling (Background Updates)](#polling-background-updates)
 - [Error Handling](#error-handling)
+  - [retry — Automatic Request Retry](#retry--automatic-request-retry)
 - [Loading States](#loading-states)
-- [Manual Data Updates](#manual-data-updates)
+- [Manual Data Updates (mutate)](#manual-data-updates-mutate)
 
 **Real-World Examples:**
 - [Data Table with Pagination](#data-table-with-pagination--sorting)
@@ -49,9 +52,13 @@ A production-ready composable that eliminates boilerplate and solves the hard pr
 - [Batch Requests](#batch-requests)
 
 **Advanced:**
-- [Custom Axios Instance](#-advanced-configuration)
-- [Authentication & Tokens](#-authentication--token-management) *(Optional)*
+- [Advanced Configuration](#️-advanced-configuration)
+- [Authentication & Token Management](#-authentication--token-management)
+- [Error Handling Reference](#-error-handling-reference)
+- [Utilities & Standalone Composables](#-utilities--standalone-composables)
 - [API Reference](#-api-reference)
+- [Common Patterns](#-common-patterns)
+- [Troubleshooting](#-troubleshooting)
 
 > 💡 **New to the library?** Start with [Quick Start](#-quick-start), then explore [Basic Usage](#-basic-usage). Skip authentication until you need it!
 
@@ -70,6 +77,8 @@ pnpm add @ametie/vue-muza-use axios
 yarn add @ametie/vue-muza-use axios
 ```
 
+Peer dependencies are packages you need to install separately — the library uses them but doesn't bundle them. You need `vue` (≥ 3.x) and `axios` (≥ 1.x) in your project.
+
 ---
 
 ## 🚀 Quick Start
@@ -85,12 +94,10 @@ import App from './App.vue'
 
 const app = createApp(App)
 
-// Create API client with minimal config
 const api = createApiClient({
   baseURL: 'https://api.example.com'
 })
 
-// Install plugin
 app.use(createApi({ axios: api }))
 
 app.mount('#app')
@@ -111,7 +118,7 @@ interface User {
 }
 
 const { data, loading, error } = useApi<User>('/users/1', {
-  immediate: true  // Auto-fetch on mount
+  immediate: true
 })
 </script>
 
@@ -134,21 +141,26 @@ This example shows the library's power: **automatic race condition handling** an
 import { ref } from 'vue'
 import { useApi } from '@ametie/vue-muza-use'
 
+interface Product {
+  id: number
+  name: string
+  price: number
+}
+
 const searchQuery = ref('')
 
-// 💡 Use a getter function for dynamic URLs
-const { data, loading } = useApi(
+const { data, loading } = useApi<Product[]>(
   () => `/products/search?q=${searchQuery.value}`,
   {
-    watch: searchQuery,  // Auto-refetch when query changes
-    debounce: 500        // Wait 500ms after typing stops
+    watch: searchQuery,
+    debounce: 500
   }
 )
 </script>
 
 <template>
   <input v-model="searchQuery" placeholder="Search products..." />
-  
+
   <div v-if="loading">Searching...</div>
   <ul v-else-if="data?.length">
     <li v-for="product in data" :key="product.id">
@@ -159,11 +171,43 @@ const { data, loading } = useApi(
 </template>
 ```
 
-**🎯 What just happened?**
-- No race conditions — previous searches auto-cancel
-- Debounce — waits for user to stop typing
-- TypeScript — full type safety
-- Clean code — no manual cleanup needed
+### 4. POST with Retry
+
+Use `retry` to automatically re-attempt failed form submissions before showing an error.
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+interface CreateOrderResponse {
+  id: number
+  status: string
+}
+
+const form = ref({ productId: 1, quantity: 2 })
+
+const { execute, loading, error } = useApi<CreateOrderResponse>(
+  '/orders',
+  {
+    method: 'POST',
+    data: form,
+    retry: 3,
+    retryDelay: 1000,
+    onSuccess: (response) => {
+      console.log('Order created:', response.data.id)
+    }
+  }
+)
+</script>
+
+<template>
+  <button :disabled="loading" @click="execute()">
+    {{ loading ? 'Placing order...' : 'Place Order' }}
+  </button>
+  <p v-if="error">{{ error.message }}</p>
+</template>
+```
 
 ---
 
@@ -173,32 +217,77 @@ const { data, loading } = useApi(
 
 #### Manual Execution
 ```typescript
+import { useApi } from '@ametie/vue-muza-use'
+
+interface User {
+  id: number
+  name: string
+}
+
 const { data, loading, error, execute } = useApi<User>('/users/1')
 
-// Trigger manually (e.g., on button click)
 await execute()
 ```
 
 #### Auto-Fetch on Mount
 ```typescript
+import { useApi } from '@ametie/vue-muza-use'
+
+interface User {
+  id: number
+  name: string
+}
+
 const { data } = useApi<User>('/users/1', {
-  immediate: true  // Fetches automatically
+  immediate: true
 })
 ```
 
 #### With Query Parameters
 ```typescript
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
 const filters = ref({
   status: 'active',
   limit: 20
 })
 
 const { data } = useApi('/users', {
-  params: filters,    // Automatically unwrapped
-  watch: filters,     // Re-fetch when filters change
+  params: filters,
+  watch: filters,
   immediate: true
 })
 ```
+
+### Conditional Fetching
+
+Pass a getter function that returns `undefined` to prevent a request from firing until a required value is available.
+
+```typescript
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+interface User {
+  id: number
+  name: string
+}
+
+const id = ref<number | null>(null)
+
+const { data } = useApi<User>(
+  () => id.value ? `/users/${id.value}` : undefined,
+  { watch: id }
+)
+
+// No request fires until id.value is set
+id.value = 42  // → triggers request to /users/42
+```
+
+> [!NOTE]
+> When the URL getter returns `undefined`, the request throws internally with
+> "Request URL is missing". This error is surfaced in `error.value` like any
+> other request failure, so your error handling works as expected.
 
 ---
 
@@ -210,22 +299,31 @@ const { data } = useApi('/users', {
 import { ref } from 'vue'
 import { useApi } from '@ametie/vue-muza-use'
 
+interface LoginResponse {
+  accessToken: string
+  refreshToken: string
+}
+
 const form = ref({
   email: '',
   password: ''
 })
 
-const { execute, loading, error } = useApi('/auth/login', {
-  method: 'POST',
-  data: form,  // Ref is auto-unwrapped
-  onSuccess: (response) => {
-    console.log('Logged in!', response.data)
+const { execute, loading, error } = useApi<LoginResponse>(
+  '/auth/login',
+  {
+    method: 'POST',
+    data: form,
+    authMode: 'public',
+    onSuccess: (response) => {
+      console.log('Logged in!', response.data.accessToken)
+    }
   }
-})
+)
 </script>
 
 <template>
-  <form @submit.prevent="execute">
+  <form @submit.prevent="execute()">
     <input v-model="form.email" type="email" />
     <input v-model="form.password" type="password" />
     <button :disabled="loading">
@@ -246,19 +344,29 @@ Watch refs and automatically refetch when they change. Perfect for filters, sear
 
 #### Single Dependency
 ```typescript
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+interface User {
+  id: number
+  name: string
+}
+
 const userId = ref(1)
 
-const { data } = useApi(() => `/users/${userId.value}`, {
-  watch: userId,
-  immediate: true
-})
+const { data } = useApi<User>(
+  () => `/users/${userId.value}`,
+  { watch: userId, immediate: true }
+)
 
-// Change userId → automatic refetch
-userId.value = 2
+userId.value = 2  // → automatic refetch
 ```
 
 #### Multiple Dependencies
 ```typescript
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
 const searchQuery = ref('')
 const category = ref('all')
 
@@ -273,6 +381,9 @@ const { data } = useApi(
 
 #### Auto-Save Form
 ```typescript
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
 const settings = ref({
   theme: 'dark',
   notifications: true
@@ -281,28 +392,132 @@ const settings = ref({
 useApi('/user/settings', {
   method: 'PUT',
   data: settings,
-  watch: settings,    // Deep watch by default
-  debounce: 1000,     // Save 1s after changes stop
-  onSuccess: () => toast.success('Saved!')
+  watch: settings,
+  debounce: 1000,
+  onSuccess: () => console.log('Saved!')
 })
 ```
 
 ---
 
+### ignoreUpdates — Atomic Updates Without Refetch
+
+**TL;DR: Change multiple reactive values at once without triggering a request between each change.**
+
+When `watch` is active, every change to a watched ref triggers a new request. If you need to update three filter fields at once, you'd get three requests instead of one. `ignoreUpdates` wraps your changes so the watcher stays silent while you update all fields, then you call `execute()` once.
+
+#### ❌ Without ignoreUpdates — 2 requests fire
+
+```typescript
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+const page = ref(1)
+const search = ref('')
+
+const { execute } = useApi('/users', {
+  params: { page, search },
+  watch: [page, search]
+})
+
+// BAD: each assignment triggers a separate request
+page.value = 1    // → request 1: page=1, search=''
+search.value = 'john'  // → request 2: page=1, search=john
+```
+
+#### ✅ With ignoreUpdates — 1 request fires
+
+```typescript
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+const page = ref(1)
+const search = ref('')
+
+const { execute, ignoreUpdates } = useApi('/users', {
+  params: { page, search },
+  watch: [page, search]
+})
+
+// GOOD: all changes are batched, only one request fires
+ignoreUpdates(() => {
+  page.value = 1
+  search.value = 'john'
+})
+await execute()  // → single request: page=1, search=john
+```
+
+#### Reset filters without auto-fetching
+
+Use `ignoreUpdates` to reset all filters to their defaults, then manually trigger a single request.
+
+```typescript
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+const page = ref(1)
+const search = ref('')
+const status = ref('all')
+
+const { execute, ignoreUpdates } = useApi('/users', {
+  params: { page, search, status },
+  watch: [page, search, status]
+})
+
+function resetFilters() {
+  ignoreUpdates(() => {
+    page.value = 1
+    search.value = ''
+    status.value = 'all'
+  })
+  execute()  // single request with reset values
+}
+```
+
+#### Safe to call without a watch option
+
+If no `watch` option is configured, `ignoreUpdates` still runs the updater — it just has nothing to suppress.
+
+```typescript
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+const counter = ref(0)
+const { ignoreUpdates } = useApi('/data')
+
+// Safe — no error thrown, updater still runs
+ignoreUpdates(() => {
+  counter.value = 42
+})
+```
+
+> [!NOTE]
+> `ignoreUpdates` is synchronous only. Changes made after an `await` inside the
+> updater function will NOT be suppressed — the flag resets after the synchronous
+> portion completes. If you need to update async values, update them outside
+> `ignoreUpdates` and call `execute()` manually.
+
+---
+
 ### Polling (Background Updates)
 
-Keep data fresh with smart polling. Automatically pauses when browser tab is hidden.
+**TL;DR: Keep data fresh with smart polling that automatically pauses when the browser tab is hidden.**
 
 #### Simple Polling
 ```typescript
+import { useApi } from '@ametie/vue-muza-use'
+
 const { data } = useApi('/notifications', {
   immediate: true,
-  poll: 5000  // Fetch every 5 seconds
+  poll: 5000
 })
 ```
 
 #### Dynamic Polling Control
 ```typescript
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
 const pollInterval = ref(3000)
 
 const { data } = useApi('/live-feed', {
@@ -310,12 +525,40 @@ const { data } = useApi('/live-feed', {
   immediate: true
 })
 
-// Stop polling
-pollInterval.value = 0
-
-// Resume with different interval
-pollInterval.value = 5000
+pollInterval.value = 0     // Stop polling
+pollInterval.value = 5000  // Resume with new interval
 ```
+
+#### Polling Object Syntax with Reactive Fields
+
+Both `interval` and `whenHidden` can be reactive refs — change them at runtime without re-creating the composable.
+
+```typescript
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+const interval = ref(5000)
+const whenHidden = ref(false)
+
+const { data } = useApi('/status', {
+  immediate: true,
+  poll: { interval, whenHidden }
+})
+
+// Slow down polling
+interval.value = 30000
+
+// Allow polling even when tab is not visible
+whenHidden.value = true
+
+// Stop polling completely
+interval.value = 0
+```
+
+> [!NOTE]
+> By default `whenHidden: false` — polling pauses when the browser tab is hidden
+> and resumes automatically when the user switches back. Set `whenHidden: true`
+> for background jobs that must continue regardless of tab visibility.
 
 ---
 
@@ -323,24 +566,112 @@ pollInterval.value = 5000
 
 #### Per-Request Error Handling
 ```typescript
+import { useApi } from '@ametie/vue-muza-use'
+
 const { error, execute } = useApi('/users', {
   onError: (error) => {
     if (error.status === 404) {
-      toast.error('User not found')
+      console.error('User not found')
     } else {
-      toast.error('Something went wrong')
+      console.error('Something went wrong')
     }
   },
-  skipErrorNotification: true  // Skip global handler
+  skipErrorNotification: true
 })
 ```
 
-#### Retry on Failure
+---
+
+### retry — Automatic Request Retry
+
+**TL;DR: Automatically retry failed requests before showing an error.**
+
+Retries fire only after the request fails. The `loading` state stays `true` during all attempts. `onError` is only called after the final failure.
+
+#### retry option
+
+| Value | Meaning |
+|-------|---------|
+| `false` | Never retry (default) |
+| `true` | Retry up to 3 times |
+| `3` | Retry exactly 3 times |
+
+#### retryDelay
+
+How many milliseconds to wait between retry attempts. Default: `1000` (1 second).
+
+#### retryStatusCodes — The Priority Chain
+
+`retryStatusCodes` controls which HTTP status codes should trigger a retry. The library uses a three-level priority chain:
+
+```
+Per-request retryStatusCodes
+  ↓ (if not set)
+globalOptions.retryStatusCodes
+  ↓ (if not set)
+Library default: [408, 429, 500, 502, 503, 504]
+```
+
+- **Per-request**: `retryStatusCodes` in `useApi()` options — highest priority, overrides everything
+- **globalOptions**: `retryStatusCodes` in `createApi()` — applies to all requests that don't set their own
+- **Library default**: `[408, 429, 500, 502, 503, 504]` — used when neither level is configured
+
+> [!NOTE]
+> `retryStatusCodes: []` means retry on ANY error — network errors, timeouts,
+> and any non-2xx response. This is an explicit opt-in, not the default.
+
+> [!WARNING]
+> Retry does NOT fire on `AbortError` (cancelled requests) or when the component
+> unmounts during a retry delay — the library cleans up safely in both cases.
+
+#### Examples
+
+Retry only on server errors (500, 503):
+
 ```typescript
-useApi('/flaky-endpoint', {
+import { useApi } from '@ametie/vue-muza-use'
+
+const { data } = useApi('/reports', {
   immediate: true,
-  retry: 3,         // Retry 3 times
-  retryDelay: 1000  // Wait 1s between retries
+  retry: 3,
+  retryDelay: 2000,
+  retryStatusCodes: [500, 503]
+})
+```
+
+Retry on any error including network failures:
+
+```typescript
+import { useApi } from '@ametie/vue-muza-use'
+
+const { data } = useApi('/critical-data', {
+  immediate: true,
+  retry: 5,
+  retryStatusCodes: []  // retry on any error
+})
+```
+
+Global default with per-request override:
+
+```typescript
+import { createApp } from 'vue'
+import { createApi, createApiClient, useApi } from '@ametie/vue-muza-use'
+
+// main.ts — global: retry 2 times on server errors
+const api = createApiClient({ baseURL: 'https://api.example.com' })
+createApp(App).use(createApi({
+  axios: api,
+  globalOptions: {
+    retry: 2,
+    retryStatusCodes: [500, 502, 503, 504]
+  }
+}))
+
+// In a component — override: retry only once for this request
+const { data } = useApi('/payments', {
+  immediate: true,
+  retry: 1,
+  retryStatusCodes: [500]
 })
 ```
 
@@ -350,17 +681,19 @@ useApi('/flaky-endpoint', {
 
 #### Per-Request Loading
 ```typescript
+import { useApi } from '@ametie/vue-muza-use'
+
 const { data: user, loading: userLoading } = useApi('/user')
 const { data: posts, loading: postsLoading } = useApi('/posts')
-
-// Each request tracks its own loading state
 ```
 
 #### Lifecycle Hooks
 ```typescript
+import { useApi } from '@ametie/vue-muza-use'
+
 const { execute } = useApi('/analytics', {
   onBefore: () => {
-    loadingBar.start()
+    console.log('Request starting...')
   },
   onSuccess: (response) => {
     console.log('Success!', response.data)
@@ -369,112 +702,69 @@ const { execute } = useApi('/analytics', {
     console.error('Failed:', error.message)
   },
   onFinish: () => {
-    loadingBar.finish()  // Always called
+    console.log('Request finished (success or error)')
   }
 })
 ```
 
 ---
 
-### Manual Data Updates
+### Manual Data Updates (mutate)
 
-Use `mutate` to manually update the data ref. Supports direct values or updater functions (like React's `setState`).
+**TL;DR: Update local data optimistically or post-process fetched data without re-fetching.**
 
-> 🎓 **When to use `mutate`:**  
-> ✅ Adding/removing/updating items in arrays  
-> ✅ Local sorting/filtering (without refetching)  
-> ✅ Transform data in `onSuccess` (adding computed fields)
-> 
-> **When to use `computed` instead:**  
-> ✅ Completely changing data structure (e.g., API format → App format)  
-> ✅ Extracting nested data that changes the return type  
-> ✅ Complex transformations that depend on other refs
+Use `mutate` to manually update the `data` ref. Supports direct values or updater functions (like React's `setState`). Calling `mutate` automatically clears any existing error.
 
 #### Add/Remove/Update Items
 ```typescript
+import { useApi } from '@ametie/vue-muza-use'
+
+interface Todo {
+  id: number
+  title: string
+  done: boolean
+}
+
 const { data, mutate } = useApi<Todo[]>('/todos', { immediate: true })
 
-// Add item
 const addTodo = (newTodo: Todo) => {
   mutate(prev => prev ? [...prev, newTodo] : [newTodo])
 }
 
-// Remove item
 const removeTodo = (id: number) => {
   mutate(prev => prev?.filter(t => t.id !== id) ?? null)
 }
 
-// Update item
-const updateTodo = (id: number, updates: Partial<Todo>) => {
-  mutate(prev => 
-    prev?.map(t => t.id === id ? { ...t, ...updates } : t) ?? null
+const toggleTodo = (id: number) => {
+  mutate(prev =>
+    prev?.map(t => t.id === id ? { ...t, done: !t.done } : t) ?? null
   )
 }
 ```
 
-#### Sort/Filter Locally
-```typescript
-const { data, mutate } = useApi<Product[]>('/products', { immediate: true })
-
-const sortByPrice = () => {
-  mutate(prev => prev ? [...prev].sort((a, b) => a.price - b.price) : null)
-}
-
-const filterActive = () => {
-  mutate(prev => prev?.filter(p => p.active) ?? null)
-}
-
-// Reset to original
-const resetFilters = () => execute()
-```
-
 #### Transform in `onSuccess`
-
-Use `mutate` in `onSuccess` to transform data right after fetching. Two approaches:
-
-**Approach 1: Same type (recommended)**
 ```typescript
+import { useApi } from '@ametie/vue-muza-use'
+
 interface User {
   id: number
   firstName: string
   lastName: string
-  fullName?: string  // Optional field
+  fullName?: string
 }
 
-const { data, mutate } = useApi<User[]>('/users', {
+const { data } = useApi<User[]>('/users', {
   immediate: true,
   onSuccess: ({ data: users }) => {
-    // Add computed field - still User[] type
     mutate(users.map(u => ({
       ...u,
       fullName: `${u.firstName} ${u.lastName}`
     })))
   }
 })
+
+const { mutate } = useApi<User[]>('/users', { immediate: true })
 ```
-
-**Approach 2: Different structure (use separate computed)**
-```typescript
-interface ApiUser {
-  first_name: string
-  last_name: string
-}
-
-// If API returns different structure, use computed for transformation
-const { data: rawData } = useApi<ApiUser[]>('/users', { immediate: true })
-
-const users = computed(() => 
-  rawData.value?.map(u => ({
-    firstName: u.first_name,
-    lastName: u.last_name,
-    fullName: `${u.first_name} ${u.last_name}`
-  })) ?? []
-)
-```
-
-> 💡 **Rule of thumb:**  
-> - ✅ **Use `mutate` in `onSuccess`** if you're adding/modifying fields but keeping the same base type  
-> - ✅ **Use `computed`** if you're completely changing the data structure (e.g., snake_case → camelCase)
 
 ---
 
@@ -483,6 +773,20 @@ const users = computed(() =>
 ### Data Table with Pagination & Sorting
 ```vue
 <script setup lang="ts">
+import { ref, computed } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+interface Order {
+  id: number
+  created_at: string
+  total: number
+}
+
+interface OrdersResponse {
+  data: Order[]
+  total: number
+}
+
 const page = ref(1)
 const sortBy = ref('created_at')
 const sortOrder = ref<'asc' | 'desc'>('desc')
@@ -494,7 +798,7 @@ const params = computed(() => ({
   per_page: 20
 }))
 
-const { data, loading } = useApi('/orders', {
+const { data, loading } = useApi<OrdersResponse>('/orders', {
   params,
   watch: params,
   immediate: true
@@ -514,30 +818,26 @@ const { data, loading } = useApi('/orders', {
       <tr v-for="order in data?.data" :key="order.id">
         <td>{{ order.id }}</td>
         <td>{{ order.created_at }}</td>
-        <td>${{ order.total }}</td>
+        <td>\${{ order.total }}</td>
       </tr>
     </tbody>
   </table>
-  
-  <Pagination v-model="page" :total="data?.total" />
 </template>
 ```
 
+---
 
 ### Request Cancellation
 ```typescript
-import { useAbortController } from '@ametie/vue-muza-use'
+import { useAbortController, useApi } from '@ametie/vue-muza-use'
 
 const { abortAll } = useAbortController()
 
-// Multiple requests
-const { data: products } = useApi('/products', { params: filters })
-const { data: stats } = useApi('/stats', { params: filters })
+const { data: products } = useApi('/products')
+const { data: stats } = useApi('/stats')
 
-// Cancel all when filters reset
 const resetFilters = () => {
-  abortAll()  // 🛑 Cancel both requests
-  filters.value = { /* defaults */ }
+  abortAll()
 }
 ```
 
@@ -545,7 +845,7 @@ const resetFilters = () => {
 
 ### Batch Requests
 
-Execute multiple API requests in parallel with full reactive state, progress tracking, and error tolerance.
+**TL;DR: Execute multiple API requests in parallel with full reactive state, progress tracking, and error tolerance.**
 
 #### Basic Usage
 
@@ -557,11 +857,11 @@ interface User {
   name: string
 }
 
-const { 
-  successfulData,  // Ref<User[]> - only successful results
-  loading,         // Ref<boolean>
-  progress,        // Ref<{ completed, total, percentage, succeeded, failed }>
-  execute 
+const {
+  successfulData,
+  loading,
+  progress,
+  execute
 } = useApiBatch<User>([
   '/users/1',
   '/users/2',
@@ -569,58 +869,134 @@ const {
 ])
 
 await execute()
-console.log(successfulData.value)  // [User, User, User]
-console.log(progress.value)        // { completed: 3, total: 3, percentage: 100, succeeded: 3, failed: 0 }
+console.log(successfulData.value)
+console.log(progress.value)
 ```
+
+#### Per-Request Config (BatchRequestConfig)
+
+**TL;DR: Each request in the batch can have its own method, body, and headers.**
+
+Pass objects instead of strings to specify per-request configuration. You can mix strings (simple GET) and config objects in the same array.
+
+```typescript
+import { useApiBatch } from '@ametie/vue-muza-use'
+
+interface User { id: number; name: string }
+interface Post { id: number; title: string }
+
+const { data, execute } = useApiBatch([
+  '/users/1',
+  {
+    url: '/users',
+    method: 'POST',
+    data: { name: 'Alice', email: 'alice@example.com' }
+  },
+  {
+    url: '/posts',
+    method: 'GET',
+    params: { userId: 1 }
+  },
+  {
+    url: '/analytics/track',
+    method: 'POST',
+    headers: { 'X-Source': 'dashboard' },
+    data: { event: 'page_view' }
+  }
+])
+
+await execute()
+```
+
+`BatchRequestConfig` interface:
+
+```typescript
+interface BatchRequestConfig {
+  url: string
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'  // default: 'GET'
+  data?: unknown
+  params?: unknown
+  headers?: Record<string, string>
+}
+```
+
+#### BatchResultItem — What Each Result Contains
+
+Every item returned in `data` has this shape:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `url` | `string` | The URL that was requested |
+| `index` | `number` | Position in the original array |
+| `success` | `boolean` | `true` if the request succeeded |
+| `data` | `T \| null` | Response data (`null` if failed) |
+| `error` | `ApiError \| null` | Error details (`null` if succeeded) |
+| `statusCode` | `number \| null` | HTTP status code |
+| `response` | `AxiosResponse<T> \| null` | Full Axios response — access headers here (`null` if failed) |
+| `request` | `BatchRequestConfig` | The original normalized request config |
+
+Accessing response headers from a batch result:
+
+```typescript
+import { useApiBatch } from '@ametie/vue-muza-use'
+
+const { data, execute } = useApiBatch(['/users/1', '/users/2'])
+
+await execute()
+
+for (const item of data.value) {
+  if (item.response) {
+    const rateLimit = item.response.headers['x-ratelimit-remaining']
+    console.log(`${item.url} — rate limit remaining: ${rateLimit}`)
+  }
+  if (item.error) {
+    console.error(`${item.url} — failed: ${item.error.message}`)
+  }
+}
+```
+
+> [!WARNING]
+> `response` and `request` are new fields. If you were serializing
+> `BatchResultItem` to JSON or storing it in a database, update your
+> serialization logic to handle these new fields.
 
 #### Error Tolerance (Default)
 
-By default, `useApiBatch` uses `settled: true` — failed requests don't stop the batch:
+By default, `useApiBatch` uses `settled: true` — failed requests don't stop the batch.
 
 ```typescript
-const { 
-  successfulData, 
-  errors,    // Ref<ApiError[]> - all errors
+import { useApiBatch } from '@ametie/vue-muza-use'
+
+interface User { id: number; name: string }
+
+const {
+  successfulData,
+  errors,
   progress,
-  execute 
+  execute
 } = useApiBatch<User>([
   '/users/1',
-  '/users/999',  // Will fail (404)
+  '/users/999',
   '/users/3'
 ])
 
 await execute()
 
-console.log(successfulData.value.length)  // 2 (successful)
-console.log(errors.value.length)          // 1 (failed)
-console.log(progress.value)               // { succeeded: 2, failed: 1, ... }
-```
-
-#### Strict Mode
-
-Fail immediately on first error:
-
-```typescript
-const { execute } = useApiBatch<User>(urls, { 
-  settled: false  // First error will reject the entire batch
-})
-
-try {
-  await execute()
-} catch (error) {
-  console.log('Batch failed:', error.message)
-}
+console.log(successfulData.value.length)  // 2
+console.log(errors.value.length)          // 1
 ```
 
 #### With Progress Tracking
 
-Perfect for loading indicators and progress bars:
-
 ```vue
 <script setup lang="ts">
-const { loading, progress, execute } = useApiBatch<User>(urls, {
+import { useApiBatch } from '@ametie/vue-muza-use'
+
+const urls = ['/users/1', '/users/2', '/users/3', '/users/4']
+
+const { loading, progress, execute } = useApiBatch(urls, {
   onProgress: (p) => {
-    console.log(`${p.percentage}% complete (${p.succeeded} ok, ${p.failed} failed)`)
+    console.log(`${p.percentage}% (${p.succeeded} ok, ${p.failed} failed)`)
   }
 })
 </script>
@@ -635,132 +1011,13 @@ const { loading, progress, execute } = useApiBatch<User>(urls, {
 </template>
 ```
 
-#### Concurrency Limit
-
-Control how many requests run in parallel (useful for rate limiting):
-
-```typescript
-// Only 3 requests at a time
-const { execute } = useApiBatch<User>(hundredUrls, {
-  concurrency: 3
-})
-```
-
-#### Reactive URLs
-
-URLs can be reactive — use refs or computed:
-
-```typescript
-const userIds = ref([1, 2, 3])
-const urls = computed(() => userIds.value.map(id => `/users/${id}`))
-
-const { successfulData, execute } = useApiBatch<User>(urls, {
-  immediate: true  // Execute on mount
-})
-
-// When userIds changes, call execute() to refetch
-watch(userIds, () => execute())
-```
-
-#### Auto Re-Execute with Watch
-
-```typescript
-const filters = ref({ status: 'active' })
-
-const { data } = useApiBatch<User>(urls, {
-  watch: filters,     // Re-execute when filters change
-  immediate: true
-})
-```
-
-#### Item-Level Callbacks
-
-```typescript
-const { execute } = useApiBatch<User>(urls, {
-  onItemSuccess: (item, index) => {
-    console.log(`✅ [${index}] Loaded: ${item.url}`)
-  },
-  onItemError: (item, index) => {
-    console.log(`❌ [${index}] Failed: ${item.url}`, item.error?.message)
-  },
-  onFinish: (results) => {
-    console.log(`Batch complete: ${results.length} items processed`)
-  }
-})
-```
-
-#### Full Return Type
-
-```typescript
-const {
-  data,            // Ref<BatchResultItem<T>[]> - all results with metadata
-  successfulData,  // Ref<T[]> - only successful data (computed)
-  loading,         // Ref<boolean>
-  error,           // Ref<ApiError | null> - set if ALL requests failed
-  errors,          // Ref<ApiError[]> - all individual errors
-  progress,        // Ref<BatchProgress>
-  execute,         // () => Promise<BatchResultItem<T>[]>
-  abort,           // (message?: string) => void
-  reset            // () => void
-} = useApiBatch<User>(urls)
-```
-
-#### BatchResultItem Structure
-
-Each item in `data` contains:
-
-```typescript
-interface BatchResultItem<T> {
-  url: string           // The requested URL
-  index: number         // Position in original array
-  success: boolean      // Whether request succeeded
-  data: T | null        // Response data (null if failed)
-  error: ApiError | null // Error details (null if succeeded)
-  statusCode: number | null
-}
-```
-
-#### Real-World Example: Dashboard Loader
-
-```vue
-<script setup lang="ts">
-const dashboardUrls = [
-  '/api/stats',
-  '/api/recent-orders',
-  '/api/notifications',
-  '/api/user-activity'
-]
-
-const { 
-  data: results, 
-  loading, 
-  progress,
-  execute 
-} = useApiBatch(dashboardUrls, {
-  immediate: true,
-  onProgress: (p) => console.log(`Dashboard loading: ${p.percentage}%`)
-})
-
-// Extract individual data
-const stats = computed(() => results.value.find(r => r.url.includes('stats'))?.data)
-const orders = computed(() => results.value.find(r => r.url.includes('orders'))?.data)
-</script>
-
-<template>
-  <div v-if="loading" class="loading">
-    Loading dashboard... {{ progress.percentage }}%
-  </div>
-  <Dashboard v-else :stats="stats" :orders="orders" />
-</template>
-```
-
 ---
 
 ## ⚙️ Advanced Configuration
 
 ### Custom Axios Instance
 
-Full control over Axios configuration:
+**TL;DR: Pass any pre-configured Axios instance — interceptors, timeouts, headers all work.**
 
 ```typescript
 import axios from 'axios'
@@ -772,9 +1029,8 @@ const customAxios = axios.create({
   headers: { 'X-Custom-Header': 'value' }
 })
 
-// Add custom interceptors
 customAxios.interceptors.request.use((config) => {
-  // Your logic
+  config.headers['X-Request-ID'] = crypto.randomUUID()
   return config
 })
 
@@ -785,40 +1041,62 @@ app.use(createApi({ axios: customAxios }))
 
 ### Global Error Handler
 
-Normalize errors from different backend formats:
+**TL;DR: Normalize errors from different backend formats in one place.**
 
 ```typescript
-app.use(createApi({
+import { createApp } from 'vue'
+import { createApi, createApiClient } from '@ametie/vue-muza-use'
+import App from './App.vue'
+
+const api = createApiClient({ baseURL: 'https://api.example.com' })
+
+createApp(App).use(createApi({
   axios: api,
-  
-  // Global error handler
+
   onError: (error) => {
-    toast.error(error.message)
+    console.error(`[API Error] ${error.status}: ${error.message}`)
   },
-  
-  // Error parser (normalize backend responses)
-  errorParser: (error: any) => {
-    const response = error.response?.data
-    
-    // Laravel validation errors
+
+  errorParser: (error: unknown) => {
+    const axiosError = error as {
+      response?: { data?: { message?: string; errors?: Record<string, string[]> }; status?: number }
+      message?: string
+    }
+    const response = axiosError.response?.data
+
     if (response?.errors) {
       return {
         message: 'Validation Failed',
-        status: error.response.status,
+        status: axiosError.response?.status ?? 422,
         code: 'VALIDATION_ERROR',
         errors: response.errors
       }
     }
-    
-    // Default format
+
     return {
-      message: response?.message || error.message || 'Unknown error',
-      status: error.response?.status || 500,
+      message: response?.message ?? axiosError.message ?? 'Unknown error',
+      status: axiosError.response?.status ?? 500,
       details: error
     }
+  },
+
+  globalOptions: {
+    retry: 2,
+    retryDelay: 1000,
+    retryStatusCodes: [408, 429, 500, 502, 503, 504],
+    useGlobalAbort: true
   }
 }))
 ```
+
+`globalOptions` reference:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `retry` | `false \| boolean \| number` | `false` | Default retry setting applied to all requests that don't specify their own |
+| `retryDelay` | `number` | `1000` | How many milliseconds to wait between retry attempts for all requests |
+| `retryStatusCodes` | `number[]` | `[408,429,500,502,503,504]` | Default HTTP status codes that trigger a retry across all requests |
+| `useGlobalAbort` | `boolean` | `true` | When `true`, all requests subscribe to the global abort controller |
 
 ---
 
@@ -828,16 +1106,17 @@ app.use(createApi({
 
 ### Basic Auth Setup
 
-Add authentication to your API client:
+**TL;DR: Add `withAuth: true` and a `refreshUrl` to get automatic token injection and refresh.**
 
 ```typescript
+import { createApiClient } from '@ametie/vue-muza-use'
+
 const api = createApiClient({
   baseURL: 'https://api.example.com',
-  withAuth: true,  // Enable automatic token injection
+  withAuth: true,
   authOptions: {
     refreshUrl: '/auth/refresh',
     onTokenRefreshFailed: () => {
-      // Redirect to login when refresh fails
       window.location.href = '/login'
     }
   }
@@ -856,9 +1135,9 @@ The library automatically:
 
 #### Mode 1: localStorage (Default)
 
-Simple setup for development or internal tools:
-
 ```typescript
+import { createApiClient } from '@ametie/vue-muza-use'
+
 const api = createApiClient({
   baseURL: 'https://api.example.com',
   authOptions: {
@@ -868,53 +1147,55 @@ const api = createApiClient({
 })
 ```
 
-**Storage:** Both `accessToken` and `refreshToken` in localStorage  
-**Security:** ⚠️ Vulnerable to XSS attacks  
+**Storage:** Both `accessToken` and `refreshToken` in localStorage
+**Security:** ⚠️ Vulnerable to XSS attacks
 **Use case:** Development, internal tools
-
----
 
 #### Mode 2: httpOnly Cookies (Production)
 
-Recommended for production apps with sensitive data:
-
 ```typescript
+import { createApiClient } from '@ametie/vue-muza-use'
+
 const api = createApiClient({
   baseURL: 'https://api.example.com',
   authOptions: {
     refreshUrl: '/auth/refresh',
-    refreshWithCredentials: true,  // 🔑 Send cookies for refresh
+    refreshWithCredentials: true,
     onTokenRefreshFailed: () => router.push('/login')
   }
 })
 ```
 
-**Storage:** Only `accessToken` in localStorage, `refreshToken` in httpOnly cookie  
-**Security:** 🔒 Protected from XSS attacks  
+**Storage:** Only `accessToken` in localStorage, `refreshToken` in httpOnly cookie
+**Security:** 🔒 Protected from XSS attacks
 **Backend requirement:** Must set `Set-Cookie` with `HttpOnly; Secure; SameSite`
-
-**Common Issues:**
-- **Cookie not sent?** Check cookie domain and `SameSite` attribute
-- **CORS error?** Backend must set `Access-Control-Allow-Credentials: true`
-- **401 on refresh?** Verify cookie is included in request headers
 
 ---
 
 ### Saving Tokens After Login
 
 ```typescript
-import { tokenManager } from '@ametie/vue-muza-use'
+import { useApi, tokenManager } from '@ametie/vue-muza-use'
+import { useRouter } from 'vue-router'
 
-const { execute } = useApi('/auth/login', {
+interface LoginResponse {
+  accessToken: string
+  refreshToken: string
+  expiresIn: number
+}
+
+const router = useRouter()
+
+const { execute } = useApi<LoginResponse>('/auth/login', {
   method: 'POST',
-  authMode: 'public',  // No auth for login endpoint
+  authMode: 'public',
   onSuccess(response) {
     tokenManager.setTokens({
       accessToken: response.data.accessToken,
-      refreshToken: response.data.refreshToken,  // Optional in cookie mode
+      refreshToken: response.data.refreshToken,
       expiresIn: response.data.expiresIn
     })
-    
+
     router.push('/dashboard')
   }
 })
@@ -922,74 +1203,277 @@ const { execute } = useApi('/auth/login', {
 
 ---
 
-### Public Endpoints
+### authMode — Controlling Auth Per Request
 
-Skip authentication for public endpoints:
+**TL;DR: Control whether a request includes auth tokens and whether it retries on 401.**
+
+| Value | Token sent? | Retries on 401? | Use case |
+|-------|-------------|-----------------|----------|
+| `'default'` | ✅ Always | ✅ Yes | Protected endpoints (most requests) |
+| `'public'` | ❌ Never | ❌ No | Login, registration, public content |
+| `'optional'` | ✅ If available | ❌ No | Content that works for guests and logged-in users |
 
 ```typescript
-// Login (no auth needed)
-useApi('/auth/login', {
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+interface Credentials { email: string; password: string }
+interface Post { id: number; title: string }
+
+const credentials = ref<Credentials>({ email: '', password: '' })
+
+// Login — never send a token here
+const { execute: login } = useApi('/auth/login', {
   method: 'POST',
   authMode: 'public',
   data: credentials
 })
 
-// Public blog posts
-useApi('/blog/posts', {
-  authMode: 'public',
+// Public blog that shows extra content when logged in
+const { data: posts } = useApi<Post[]>('/posts', {
+  authMode: 'optional',
   immediate: true
 })
 ```
 
 ---
 
-### Advanced: Custom Refresh Payload
+### tokenManager — Manual Token Control
 
-Send additional data with token refresh requests:
+**TL;DR: Use this when you need to read, set, or clear tokens from outside a request.**
+
+The library manages tokens automatically. You only need `tokenManager` directly for:
+1. Saving tokens after login
+2. Clearing tokens on logout
+3. Checking if the user is currently logged in
+
+Full API reference:
+
+| Method | Returns | What it does |
+|--------|---------|--------------|
+| `getAccessToken()` | `string \| null` | The current access token, or `null` if not set |
+| `getRefreshToken()` | `string \| null` | The refresh token, or `null` if using httpOnly cookies |
+| `setTokens({ accessToken, refreshToken?, expiresIn? })` | `void` | Save new tokens after a successful login |
+| `clearTokens()` | `void` | Remove all tokens (call on logout) |
+| `hasTokens()` | `boolean` | `true` if an access token exists |
+| `isTokenExpired()` | `boolean` | `true` if the token has expired (5-second safety buffer applied) |
+| `getTokenExpiresAt()` | `number \| null` | Unix timestamp (ms) when the current token expires |
+| `getAuthHeader()` | `string \| null` | `"Bearer <token>"` string ready for use in headers, or `null` |
+
+After login — save tokens:
 
 ```typescript
-const api = createApiClient({
-  baseURL: 'https://api.example.com',
-  authOptions: {
-    refreshUrl: '/auth/refresh',
-    
-    // ⚠️ Use function for dynamic data
-    refreshPayload: () => ({
-      refreshToken: tokenManager.getRefreshToken(),
-      deviceId: getDeviceId(),
-      timestamp: Date.now()
-    })
+import { tokenManager } from '@ametie/vue-muza-use'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
+
+function onLoginSuccess(response: {
+  accessToken: string
+  refreshToken: string
+  expiresIn: number
+}) {
+  tokenManager.setTokens({
+    accessToken: response.accessToken,
+    refreshToken: response.refreshToken,
+    expiresIn: response.expiresIn
+  })
+  router.push('/dashboard')
+}
+```
+
+On logout — clear tokens:
+
+```typescript
+import { tokenManager } from '@ametie/vue-muza-use'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
+
+function logout() {
+  tokenManager.clearTokens()
+  router.push('/login')
+}
+```
+
+Router guard — check before navigating:
+
+```typescript
+import { tokenManager } from '@ametie/vue-muza-use'
+import { createRouter } from 'vue-router'
+
+const router = createRouter({ /* routes */ } as never)
+
+router.beforeEach((to) => {
+  if (to.meta.requiresAuth && !tokenManager.hasTokens()) {
+    return '/login'
   }
 })
 ```
 
 ---
 
-### Advanced: Token Refresh Callback
+### Advanced: extractTokens
 
-Handle additional data from refresh response:
+**TL;DR: Use this when your API uses non-standard field names for tokens.**
+
+By default the library looks for `accessToken`/`access_token` and `refreshToken`/`refresh_token` in the refresh response. If your API uses different names, provide this function.
 
 ```typescript
+import { createApiClient } from '@ametie/vue-muza-use'
+
 const api = createApiClient({
   baseURL: 'https://api.example.com',
   authOptions: {
     refreshUrl: '/auth/refresh',
-    
-    // Called after successful token refresh
-    onTokenRefreshed: (response) => {
-      const { user, permissions } = response.data
-      
-      // Update app state
-      store.commit('SET_USER', user)
-      store.commit('SET_PERMISSIONS', permissions)
-    },
-    
-    onTokenRefreshFailed: () => {
-      localStorage.clear()
-      window.location.href = '/login'
-    }
+    extractTokens: (response) => ({
+      accessToken: response.data.jwt,
+      refreshToken: response.data.refresh_jwt
+    }),
+    onTokenRefreshFailed: () => router.push('/login')
   }
 })
+```
+
+---
+
+### Advanced: AuthMonitor — Observing Token Lifecycle Events
+
+**TL;DR: Hook into token refresh events for logging, analytics, or error tracking.**
+
+Use `setAuthMonitor` to observe every stage of the token refresh lifecycle. This is useful for Sentry integration, analytics, or debugging auth issues in production.
+
+```typescript
+import {
+  setAuthMonitor,
+  AuthEventType
+} from '@ametie/vue-muza-use'
+
+setAuthMonitor((type, payload) => {
+  switch (type) {
+    case AuthEventType.REFRESH_START:
+      console.log('Token refresh started')
+      break
+    case AuthEventType.REFRESH_SUCCESS:
+      console.log('Token refreshed successfully')
+      break
+    case AuthEventType.REFRESH_ERROR:
+      // payload.error contains the failure reason
+      console.error('Token refresh failed', payload.error)
+      break
+    case AuthEventType.REQUEST_QUEUED:
+      console.log(
+        `${payload.queueSize} request(s) waiting for refresh`
+      )
+      break
+  }
+})
+```
+
+`AuthEventType` reference:
+
+| Event | When it fires |
+|-------|---------------|
+| `REFRESH_START` | A token refresh request has been sent to the server |
+| `REQUEST_QUEUED` | An API request was queued because a refresh is already in progress |
+| `REFRESH_SUCCESS` | The token was refreshed successfully |
+| `REFRESH_ERROR` | The token refresh failed (triggers `onTokenRefreshFailed`) |
+
+> [!TIP]
+> In development mode, the default monitor already logs all auth events to
+> the browser console via `console.debug`. You only need to call `setAuthMonitor`
+> if you want custom behavior (e.g., sending events to Sentry).
+
+---
+
+## 🛑 Error Handling Reference
+
+### ApiError Shape
+
+Every error surfaces as an `ApiError` object — in `error.value`, `onError`, and the global error handler.
+
+| Field | Type | Always present? | What it contains |
+|-------|------|-----------------|------------------|
+| `message` | `string` | ✅ Yes | Human-readable error description |
+| `status` | `number` | ✅ Yes | HTTP status code (`0` for network errors) |
+| `code` | `string \| undefined` | When backend sends it | Machine-readable error code from the backend |
+| `errors` | `Record<string, string[]> \| undefined` | For validation errors | Field-level validation messages (Laravel, Rails, etc.) |
+| `details` | `unknown` | When available | Raw response data from the backend |
+
+---
+
+### DebounceCancelledError
+
+**TL;DR: This error is thrown when a debounced call is cancelled — catch it to avoid console noise.**
+
+When `debounce` is active and a new call arrives before the delay expires, the previous call is cancelled. If you `await`ed that call, it will throw `DebounceCancelledError`. This is not a real error — it just means the call was replaced by a newer one.
+
+```typescript
+import { useApi, DebounceCancelledError } from '@ametie/vue-muza-use'
+
+const { execute } = useApi('/search', { debounce: 300 })
+
+async function search() {
+  try {
+    await execute()
+  } catch (err) {
+    if (err instanceof DebounceCancelledError) {
+      return  // Expected — a newer call replaced this one
+    }
+    throw err  // Re-throw unexpected errors
+  }
+}
+```
+
+> [!TIP]
+> If you use `onError` instead of awaiting `execute()`, `DebounceCancelledError`
+> is NOT passed to `onError` — it is filtered out automatically.
+> You only need to handle it if you `await execute()` directly.
+
+---
+
+## 🔧 Utilities & Standalone Composables
+
+### useApiState — Standalone Reactive State
+
+**TL;DR: Use this to build custom composables with the same state shape as useApi.**
+
+If you're writing your own composable that wraps `useApi` — or something similar — you can use `useApiState` to get the same `data / loading / error / mutate` pattern without any HTTP logic attached.
+
+```typescript
+import { useApiState } from '@ametie/vue-muza-use'
+import type { ApiError } from '@ametie/vue-muza-use'
+
+function useMyCustomComposable<T>(fetchFn: () => Promise<T>) {
+  const {
+    data,
+    loading,
+    error,
+    mutate,
+    setLoading,
+    setError,
+    reset
+  } = useApiState<T>()
+
+  async function load() {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await fetchFn()
+      mutate(result)
+    } catch (err) {
+      const apiError: ApiError = {
+        message: String(err),
+        status: 0
+      }
+      setError(apiError)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return { data, loading, error, load, reset }
+}
 ```
 
 ---
@@ -998,271 +1482,179 @@ const api = createApiClient({
 
 ### `useApi<T, D>(url, options)`
 
-The main composable for making HTTP requests.
-
-**Type Parameters:**
-- `T` — Response data type
-- `D` — Request body type (for POST/PUT/PATCH)
-
 **Arguments:**
 
 | Argument | Type | Description |
 |----------|------|-------------|
-| `url` | `MaybeRefOrGetter<string>` | API endpoint. Can be a string, ref, or getter function. |
+| `url` | `MaybeRefOrGetter<string \| undefined>` | API endpoint. String, ref, or getter function. Returning `undefined` prevents the request. |
 | `options` | `UseApiOptions<T, D>` | Configuration object (see below). |
 
 ---
 
-### Configuration Options
+#### UseApiOptions — Complete Reference
 
-#### Request Configuration
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `method` | `'GET' \| 'POST' \| 'PUT' \| 'PATCH' \| 'DELETE'` | `'GET'` | HTTP method. |
-| `data` | `MaybeRefOrGetter<D>` | `undefined` | Request body (auto-unwrapped if ref). |
-| `params` | `MaybeRefOrGetter<any>` | `undefined` | URL query parameters (auto-unwrapped). |
-| `headers` | `Record<string, string>` | `undefined` | Custom headers. |
-| `authMode` | `'default' \| 'public'` | `'default'` | Set to `'public'` to skip token injection. |
-
-#### Reactivity & Auto-Execution
+**Request Configuration:**
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `immediate` | `boolean` | `false` | Auto-execute on component mount. |
-| `watch` | `WatchSource \| WatchSource[]` | `undefined` | Refs to watch for auto-refetch. |
-| `debounce` | `number` | `0` | Debounce delay in ms (for watch). |
+| `method` | `'GET' \| 'POST' \| 'PUT' \| 'PATCH' \| 'DELETE'` | `'GET'` | HTTP method to use for the request |
+| `data` | `MaybeRefOrGetter<D>` | `undefined` | Request body — automatically unwrapped if a ref |
+| `params` | `MaybeRefOrGetter<any>` | `undefined` | URL query parameters — automatically unwrapped if a ref |
+| `headers` | `Record<string, string>` | `undefined` | Custom request headers added on top of defaults |
+| `authMode` | `'default' \| 'public' \| 'optional'` | `'default'` | Controls token injection and 401 retry behaviour |
 
-#### Polling
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `poll` | `number \| { interval: number, whenHidden?: boolean } \| Ref<number>` | `0` | Polling interval in ms. Set to `0` to disable. |
-
-**Polling Behavior:**
-- **Number**: Simple interval (pauses when tab hidden)
-- **Object**: `{ interval, whenHidden }` — control pause behavior
-- **Ref**: Dynamic control — change ref to update interval
-
-#### Retry & Error Handling
+**Reactivity & Auto-Execution:**
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `retry` | `boolean \| number` | `false` | Number of retry attempts on failure. |
-| `retryDelay` | `number` | `1000` | Delay between retries in ms. |
-| `skipErrorNotification` | `boolean` | `false` | Skip global error handler. |
+| `immediate` | `boolean` | `false` | When `true`, executes the request automatically when the composable is created |
+| `watch` | `WatchSource \| WatchSource[]` | `undefined` | One or more refs to watch — request re-fires when any of them change |
+| `debounce` | `number` | `0` | Milliseconds to wait after the last watch change before firing the request |
 
-#### State Management
+**Polling:**
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `initialData` | `T` | `null` | Initial value for `data` ref. |
-| `initialLoading` | `boolean` | `false` | Initial value for `loading` ref. |
+| `poll` | `number \| { interval: MaybeRefOrGetter<number>, whenHidden?: MaybeRefOrGetter<boolean> } \| Ref<number>` | `0` | Polling interval in ms. `0` disables polling. Object form allows reactive fields. |
 
-#### Lifecycle Hooks
+**Retry:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `retry` | `false \| boolean \| number` | `false` | Number of retry attempts on failure. `true` = 3 retries |
+| `retryDelay` | `number` | `1000` | How many milliseconds to wait between retry attempts |
+| `retryStatusCodes` | `number[]` | `[408,429,500,502,503,504]` | HTTP status codes that trigger a retry. `[]` means retry on any error |
+
+**State Initialization:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `initialData` | `T` | `null` | Initial value for `data` before the first request completes |
+| `initialLoading` | `boolean` | `false` | Initial value for `loading` — set `true` to show a spinner before the first request fires |
+
+**Lifecycle Hooks:**
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `onBefore` | `() => void` | Called before request starts. |
-| `onSuccess` | `(response: AxiosResponse<T>) => void` | Called on 2xx response. |
-| `onError` | `(error: ApiError) => void` | Called on error. |
-| `onFinish` | `() => void` | Called after request completes (success or error). |
+| `onBefore` | `() => void` | Called immediately before the request starts |
+| `onSuccess` | `(response: AxiosResponse<T>) => void` | Called on a successful 2xx response |
+| `onError` | `(error: ApiError) => void` | Called after the final failure (after all retries are exhausted) |
+| `onFinish` | `() => void` | Called after the request completes, whether success or error |
 
-#### Advanced
+**Error Control:**
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `useGlobalAbort` | `boolean` | `true` | Subscribe to global abort controller. |
+| `skipErrorNotification` | `boolean` | `false` | When `true`, the global `onError` handler is NOT called for this request |
+
+**Advanced:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `useGlobalAbort` | `boolean` | `true` | When `true`, this request participates in the global abort controller |
 
 ---
 
-### Return Values
+#### UseApiReturn — Complete Reference
 
-```typescript
-{
-  // State
-  data: Ref<T | null>              // Response data
-  loading: Ref<boolean>            // Loading state
-  error: Ref<ApiError | null>      // Error object
-  statusCode: Ref<number | null>   // HTTP status code
-  response: Ref<AxiosResponse<T>>  // Full Axios response
-  
-  // Methods
-  execute: (config?: AxiosRequestConfig) => Promise<T | null>
-  mutate: (data: T | null | ((prev: T | null) => T | null)) => void
-  abort: (reason?: string) => void
-  reset: () => void
-}
-```
+| Name | Type | Description |
+|------|------|-------------|
+| `data` | `Ref<T \| null>` | Response data from the last successful request |
+| `loading` | `Ref<boolean>` | `true` while a request is in flight (including retry delays) |
+| `error` | `Ref<ApiError \| null>` | Error from the last failed request; `null` on success |
+| `statusCode` | `Ref<number \| null>` | HTTP status code from the last completed request |
+| `response` | `Ref<AxiosResponse<T> \| null>` | Full Axios response object including headers |
+| `execute(config?)` | `(config?: ApiRequestConfig<D>) => Promise<T \| null>` | Manually trigger the request, optionally overriding options |
+| `mutate(newData)` | `(newData: T \| null \| ((prev: T \| null) => T \| null)) => void` | Update `data` locally without a network request; clears `error` |
+| `abort(msg?)` | `(message?: string) => void` | Cancel the current in-flight request |
+| `reset()` | `() => void` | Cancel the request and reset all state to initial values |
+| `ignoreUpdates(fn)` | `(updater: () => void) => void` | Run `updater` without triggering watch-based re-execution |
 
 #### `execute(config?)`
-Manually trigger the request. Optionally override configuration:
+
+Manually trigger the request. Pass a config object to override options for this call only.
 
 ```typescript
-const { execute } = useApi('/users')
+import { useApi } from '@ametie/vue-muza-use'
+
+const { execute } = useApi<{ id: number }>('/users')
 
 // Default execution
 await execute()
 
-// Override config
-await execute({ params: { page: 2 } })
-```
-
-#### `mutate(newData)`
-Manually update the `data` ref. Supports direct values or updater functions:
-
-```typescript
-const { data, mutate } = useApi<User[]>('/users')
-
-// Direct value
-mutate([{ id: 1, name: 'John' }])
-
-// Updater function (like React's setState)
-mutate(prev => prev ? [...prev, newUser] : [newUser])
-
-// Remove item
-mutate(prev => prev?.filter(u => u.id !== userId) ?? null)
-```
-
-> **Note:** `mutate` automatically clears any existing error.
-
-#### `abort(reason?)`
-Cancel the current request:
-
-```typescript
-const { execute, abort } = useApi('/long-task')
-
-execute()
-
-// Cancel after 5 seconds
-setTimeout(() => abort('Timeout'), 5000)
-```
-
-#### `reset()`
-Reset all state to initial values:
-
-```typescript
-const { data, error, loading, reset } = useApi('/users')
-
-// Clear everything
-reset()
-// data.value = null, error.value = null, loading.value = false
-
-// Cancel after 5 seconds
-setTimeout(() => abort('Timeout'), 5000)
-```
-
----
-
-### `createApiClient(options)`
-
-Factory function to create a configured Axios instance with built-in auth features.
-
-**Options:**
-
-```typescript
-interface CreateApiClientOptions extends AxiosRequestConfig {
-  // Standard Axios config
-  baseURL?: string
-  timeout?: number
-  headers?: Record<string, string>
-  withCredentials?: boolean          // Default: false
-  
-  // Auth features
-  withAuth?: boolean                 // Default: true
-  authOptions?: {
-    refreshUrl?: string              // Default: '/auth/refresh'
-    refreshWithCredentials?: boolean // Default: false (set true for httpOnly cookies)
-    onTokenRefreshFailed?: () => void
-    onTokenRefreshed?: (response: AxiosResponse) => void | Promise<void> // ✨ NEW: Handle refresh response
-    extractTokens?: (response: AxiosResponse) => { accessToken: string, refreshToken?: string }
-    refreshPayload?: Record<string, unknown> | (() => Record<string, unknown> | Promise<Record<string, unknown>>)
-  }
-}
-```
-
-**Default Configuration:**
-
-The library comes with sensible defaults:
-- `timeout: 60000` (60 seconds)
-- `headers: { "Content-Type": "application/json" }`
-- `withCredentials: false`
-- `refreshWithCredentials: false`
-
-**Example:**
-
-```typescript
-// Standard setup (tokens in localStorage)
-const api = createApiClient({
-  baseURL: 'https://api.example.com',
-  timeout: 30000,
-  withAuth: true,
-  authOptions: {
-    refreshUrl: '/auth/refresh',
-    onTokenRefreshFailed: () => {
-      router.push('/login')
-    }
-  }
+// Override data and params for this call only
+await execute({
+  data: { name: 'John' },
+  params: { notify: true }
 })
 
-// With httpOnly cookies for refresh token only
-const apiWithCookies = createApiClient({
-  baseURL: 'https://api.example.com',
-  authOptions: {
-    refreshUrl: '/auth/refresh',
-    refreshWithCredentials: true,  // 🍪 Send cookies only for refresh request
-    onTokenRefreshFailed: () => router.push('/login')
-  }
-})
-
-// With cookies for ALL requests (use with caution - CSRF risk)
-const apiWithAllCookies = createApiClient({
-  baseURL: 'https://api.example.com',
-  withCredentials: true,  // ⚠️ All requests will send cookies
-  authOptions: {
-    refreshUrl: '/auth/refresh',
-    refreshWithCredentials: true
-  }
-})
-```
-
-> 🔒 **Security Note:** Only enable `withCredentials` when necessary. Using it globally can expose you to CSRF attacks. Prefer `refreshWithCredentials: true` if you only need cookies for token refresh.
+// Override authMode for this call only
+await execute({ authMode: 'public' })
 ```
 
 ---
 
 ### `createApi(options)`
 
-Vue plugin factory for global configuration.
-
-**Options:**
+Vue plugin factory. Call this once in `main.ts` to provide global configuration.
 
 ```typescript
-interface CreateApiOptions {
-  axios: AxiosInstance              // Required: Axios instance
-  onError?: (error: ApiError) => void
-  errorParser?: (error: any) => ApiError
-}
-```
+import { createApp } from 'vue'
+import { createApi, createApiClient } from '@ametie/vue-muza-use'
+import App from './App.vue'
 
-**Example:**
+const api = createApiClient({ baseURL: 'https://api.example.com' })
 
-```typescript
-app.use(createApi({
+createApp(App).use(createApi({
   axios: api,
   onError: (error) => {
-    toast.error(error.message)
+    console.error(error.message)
   },
-  errorParser: (error) => {
-    // Custom error transformation
-    return {
-      message: error.response?.data?.message || error.message,
-      status: error.response?.status,
-      code: error.response?.data?.code
-    }
+  globalOptions: {
+    retry: 2,
+    retryDelay: 1000,
+    retryStatusCodes: [500, 502, 503, 504],
+    useGlobalAbort: true
   }
 }))
 ```
+
+**Options:**
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `axios` | `AxiosInstance` | ✅ Yes | The Axios instance to use for all requests |
+| `onError` | `(error: ApiError, original: unknown) => void` | No | Global error handler called for every failed request (unless `skipErrorNotification: true`) |
+| `errorParser` | `(error: unknown) => ApiError` | No | Custom function to convert raw Axios errors into `ApiError` format |
+| `globalOptions` | `object` | No | Default options applied to every `useApi()` call (see globalOptions table above) |
+
+---
+
+### `createApiClient(options)`
+
+Factory function that creates a configured Axios instance with built-in JWT auth features.
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `baseURL` | `string` | `undefined` | Base URL prepended to all request paths |
+| `timeout` | `number` | `60000` | Request timeout in milliseconds |
+| `withCredentials` | `boolean` | `false` | When `true`, all requests include cookies (needed for CORS with cookies) |
+| `withAuth` | `boolean` | `true` | Enable automatic token injection and refresh |
+| `authOptions.refreshUrl` | `string` | `'/auth/refresh'` | Endpoint used to refresh an expired access token |
+| `authOptions.refreshWithCredentials` | `boolean` | `false` | Send cookies on the refresh request only (use with httpOnly refresh tokens) |
+| `authOptions.onTokenRefreshFailed` | `() => void` | `undefined` | Called when token refresh fails — typically redirect to login |
+| `authOptions.onTokenRefreshed` | `(response: AxiosResponse) => void \| Promise<void>` | `undefined` | Called after a successful refresh — use to sync user state |
+| `authOptions.extractTokens` | `(response: AxiosResponse) => { accessToken: string, refreshToken?: string }` | `undefined` | Override token field names from the refresh response |
+| `authOptions.refreshPayload` | `Record<string, unknown> \| (() => Record<string, unknown>)` | `undefined` | Extra data to send with the refresh request (device ID, etc.) |
+
+> [!WARNING]
+> If you create two `createApiClient()` instances in the same app, they share the
+> module-level `isRefreshing` flag and `failedQueue`. This can cause unexpected
+> behaviour when both instances handle 401 refresh at the same time. Use a single
+> `createApiClient` per app, and route different API domains through it using
+> interceptors or `baseURL` overrides on individual requests.
 
 ---
 
@@ -1270,134 +1662,467 @@ app.use(createApi({
 
 Execute multiple API requests in parallel with full reactive state.
 
-**Type Parameters:**
-- `T` — Response data type for each request
-
 **Arguments:**
 
 | Argument | Type | Description |
 |----------|------|-------------|
-| `urls` | `MaybeRefOrGetter<string[]>` | Array of API endpoints. Can be static array, ref, or getter. |
-| `options` | `UseApiBatchOptions<T>` | Configuration object (see below). |
+| `urls` | `MaybeRefOrGetter<BatchInput[]>` | Array of URLs (strings) or `BatchRequestConfig` objects, or a ref/getter of that array |
+| `options` | `UseApiBatchOptions<T>` | Configuration object |
 
----
+`BatchInput` type:
+```typescript
+type BatchInput = string | BatchRequestConfig
+```
 
-#### Batch Options
+**UseApiBatchOptions:**
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `settled` | `boolean` | `true` | If `true`, failed requests don't stop the batch. If `false`, first error rejects entire batch. |
-| `concurrency` | `number` | `undefined` | Max parallel requests. Default: unlimited. |
-| `immediate` | `boolean` | `false` | Auto-execute on mount. |
-| `skipErrorNotification` | `boolean` | `true` | Skip global error handler for individual failures. |
-| `watch` | `WatchSource \| WatchSource[]` | `undefined` | Re-execute when sources change. |
+| `settled` | `boolean` | `true` | When `true`, all requests run even if some fail. When `false`, the first error stops the batch |
+| `concurrency` | `number` | unlimited | Maximum number of requests that run in parallel at once |
+| `immediate` | `boolean` | `false` | Execute the batch automatically when the composable is created |
+| `skipErrorNotification` | `boolean` | `true` | Suppress global error handler for individual item failures |
+| `watch` | `WatchSource \| WatchSource[]` | `undefined` | Re-execute the batch when these sources change |
+| `onItemSuccess` | `(item: BatchResultItem<T>, index: number) => void` | `undefined` | Called each time a single request in the batch succeeds |
+| `onItemError` | `(item: BatchResultItem<T>, index: number) => void` | `undefined` | Called each time a single request in the batch fails |
+| `onProgress` | `(progress: BatchProgress) => void` | `undefined` | Called after each request completes with updated progress |
+| `onFinish` | `(results: BatchResultItem<T>[]) => void` | `undefined` | Called once when all requests have completed |
 
-**Callbacks:**
+**UseApiBatchReturn:**
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `onItemSuccess` | `(item: BatchResultItem<T>, index: number) => void` | Called when individual request succeeds. |
-| `onItemError` | `(item: BatchResultItem<T>, index: number) => void` | Called when individual request fails. |
-| `onProgress` | `(progress: BatchProgress) => void` | Called when progress updates. |
-| `onFinish` | `(results: BatchResultItem<T>[]) => void` | Called when all requests complete. |
+| Name | Type | Description |
+|------|------|-------------|
+| `data` | `Ref<BatchResultItem<T>[]>` | All results with full metadata |
+| `successfulData` | `Ref<T[]>` | Only the data from successful requests |
+| `loading` | `Ref<boolean>` | `true` while any request is still in flight |
+| `error` | `Ref<ApiError \| null>` | Set only if ALL requests in the batch failed |
+| `errors` | `Ref<ApiError[]>` | All individual errors from failed requests |
+| `progress` | `Ref<BatchProgress>` | Current progress tracking object |
+| `execute` | `() => Promise<BatchResultItem<T>[]>` | Start the batch |
+| `abort` | `(message?: string) => void` | Cancel all pending requests |
+| `reset` | `() => void` | Reset all state to initial values |
 
----
+**BatchResultItem<T>:**
 
-#### Batch Return Values
-
-```typescript
-{
-  // State
-  data: Ref<BatchResultItem<T>[]>  // All results with metadata
-  successfulData: Ref<T[]>         // Only successful data (computed)
-  loading: Ref<boolean>            // True while any request pending
-  error: Ref<ApiError | null>      // Set if ALL requests failed
-  errors: Ref<ApiError[]>          // All individual errors
-  progress: Ref<BatchProgress>     // Progress tracking
-  
-  // Methods
-  execute: () => Promise<BatchResultItem<T>[]>
-  abort: (message?: string) => void
-  reset: () => void
-}
-```
-
-#### `BatchProgress`
-
-```typescript
-interface BatchProgress {
-  completed: number   // Requests finished (success + failed)
-  total: number       // Total requests
-  percentage: number  // 0-100
-  succeeded: number   // Successful requests
-  failed: number      // Failed requests
-}
-```
-
-#### `BatchResultItem<T>`
-
-```typescript
-interface BatchResultItem<T> {
-  url: string              // Requested URL
-  index: number            // Position in original array
-  success: boolean         // Whether succeeded
-  data: T | null           // Response data
-  error: ApiError | null   // Error if failed
-  statusCode: number | null
-}
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| `url` | `string` | The URL that was requested |
+| `index` | `number` | Position in the original array |
+| `success` | `boolean` | `true` if the request succeeded |
+| `data` | `T \| null` | Response data (`null` if failed) |
+| `error` | `ApiError \| null` | Error details (`null` if succeeded) |
+| `statusCode` | `number \| null` | HTTP status code |
+| `response` | `AxiosResponse<T> \| null` | Full Axios response (`null` if failed) |
+| `request` | `BatchRequestConfig` | The original normalized request config |
 
 ---
 
 ### `useAbortController()`
 
-Access the global abort controller for cancelling multiple requests.
-
-**Returns:**
-
-```typescript
-{
-  abortAll: (reason?: string) => void  // Cancel all subscribed requests
-  signal: Ref<AbortSignal>             // Current abort signal
-}
-```
-
-**Example:**
+**TL;DR: Manually cancel all active requests at once — useful when navigating away or resetting filters.**
 
 ```typescript
 import { useAbortController } from '@ametie/vue-muza-use'
 
-const { abortAll } = useAbortController()
+const { abortAll, getSignal, abortCount } = useAbortController()
 
-const resetFilters = () => {
-  abortAll('Filter reset')
-  // ... reset logic
-}
+abortAll('Filter reset')
+```
+
+**Returns:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `abortAll` | `(reason?: string) => void` | Cancel all requests currently subscribed to this controller |
+| `getSignal` | `() => AbortSignal` | Get the current AbortSignal to attach to manual fetch calls |
+| `abortCount` | `Ref<number>` | Increments each time `abortAll` is called |
+
+---
+
+### `tokenManager`
+
+See the full [tokenManager section](#tokenmanager--manual-token-control) above.
+
+Quick import:
+```typescript
+import { tokenManager } from '@ametie/vue-muza-use'
+
+tokenManager.setTokens({ accessToken: '...', expiresIn: 3600 })
+tokenManager.clearTokens()
+const isLoggedIn = tokenManager.hasTokens()
 ```
 
 ---
 
-### Type Definitions
+### `useApiState<T>()`
 
-#### `ApiError`
+See the full [useApiState section](#useapistate--standalone-reactive-state) above.
 
+Quick import:
 ```typescript
-interface ApiError {
-  message: string                    // User-friendly error message
-  status?: number                    // HTTP status code
-  code?: string                      // Custom error code
-  errors?: Record<string, string[]>  // Validation errors
-  details?: any                      // Original error object
+import { useApiState } from '@ametie/vue-muza-use'
+
+const { data, loading, error, mutate, setLoading, setError, reset } =
+  useApiState<MyType>()
+```
+
+---
+
+## 🧩 Common Patterns
+
+### 1. Search with Debounce and Reset
+
+Full component: debounced search that resets cleanly without triggering an intermediate request.
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+interface User {
+  id: number
+  name: string
+  email: string
 }
+
+const search = ref('')
+const page = ref(1)
+
+const { data, loading, execute, ignoreUpdates } = useApi<User[]>(
+  () => `/users?search=${search.value}&page=${page.value}`,
+  {
+    watch: [search, page],
+    debounce: 400,
+    immediate: true
+  }
+)
+
+function resetSearch() {
+  ignoreUpdates(() => {
+    search.value = ''
+    page.value = 1
+  })
+  execute()  // single request with reset values
+}
+</script>
+
+<template>
+  <div>
+    <input v-model="search" placeholder="Search users..." />
+    <button @click="resetSearch">Clear</button>
+
+    <div v-if="loading">Searching...</div>
+    <ul v-else>
+      <li v-for="user in data" :key="user.id">
+        {{ user.name }} — {{ user.email }}
+      </li>
+    </ul>
+  </div>
+</template>
 ```
 
-#### `MaybeRefOrGetter<T>`
+---
 
-```typescript
-type MaybeRefOrGetter<T> = T | Ref<T> | (() => T)
+### 2. Paginated List with Filter Reset
+
+When the user changes a filter, reset the page to 1 using `ignoreUpdates` so only one request fires.
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+interface Post {
+  id: number
+  title: string
+  status: string
+}
+
+const page = ref(1)
+const status = ref('all')
+
+const { data, loading, execute, ignoreUpdates } = useApi<Post[]>(
+  () => `/posts?status=${status.value}&page=${page.value}`,
+  { watch: [status, page], immediate: true }
+)
+
+function changeStatus(newStatus: string) {
+  // Reset page to 1 when filter changes — one request, not two
+  ignoreUpdates(() => {
+    status.value = newStatus
+    page.value = 1
+  })
+  execute()
+}
+</script>
+
+<template>
+  <div>
+    <button @click="changeStatus('all')">All</button>
+    <button @click="changeStatus('published')">Published</button>
+    <button @click="changeStatus('draft')">Drafts</button>
+
+    <div v-if="loading">Loading...</div>
+    <ul v-else>
+      <li v-for="post in data" :key="post.id">
+        [{{ post.status }}] {{ post.title }}
+      </li>
+    </ul>
+
+    <button :disabled="page <= 1" @click="page--">Prev</button>
+    <span>Page {{ page }}</span>
+    <button @click="page++">Next</button>
+  </div>
+</template>
 ```
 
-Accepts a value, a ref, or a getter function. Automatically unwrapped by the library.
+---
+
+### 3. Form Submit with Loading, Error Display, and Retry
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useApi, DebounceCancelledError } from '@ametie/vue-muza-use'
+
+interface CreatePostDto {
+  title: string
+  body: string
+}
+
+interface Post {
+  id: number
+  title: string
+}
+
+const form = ref<CreatePostDto>({ title: '', body: '' })
+
+const { execute, loading, error } = useApi<Post, CreatePostDto>(
+  '/posts',
+  {
+    method: 'POST',
+    data: form,
+    retry: 2,
+    retryDelay: 1500,
+    retryStatusCodes: [500, 502, 503]
+  }
+)
+
+async function submit() {
+  try {
+    const result = await execute()
+    if (result) {
+      console.log('Post created with id:', result.id)
+    }
+  } catch (err) {
+    if (err instanceof DebounceCancelledError) return
+    throw err
+  }
+}
+</script>
+
+<template>
+  <form @submit.prevent="submit">
+    <input v-model="form.title" placeholder="Title" required />
+    <textarea v-model="form.body" placeholder="Body" required />
+    <p v-if="error" class="error">{{ error.message }}</p>
+    <button type="submit" :disabled="loading">
+      {{ loading ? 'Saving...' : 'Create Post' }}
+    </button>
+  </form>
+</template>
+```
+
+---
+
+### 4. Dashboard with Parallel Requests (useApiBatch)
+
+```vue
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useApiBatch } from '@ametie/vue-muza-use'
+import type { BatchRequestConfig } from '@ametie/vue-muza-use'
+
+interface Stats { totalUsers: number; revenue: number }
+interface Order { id: number; total: number }
+interface Notification { id: number; text: string }
+
+const requests: BatchRequestConfig[] = [
+  { url: '/api/stats' },
+  { url: '/api/recent-orders', params: { limit: 5 } },
+  { url: '/api/notifications' }
+]
+
+const {
+  data: results,
+  loading,
+  progress,
+  execute
+} = useApiBatch(requests, { immediate: true })
+
+const stats = computed(
+  () => results.value.find(r => r.url.includes('stats'))?.data as Stats | undefined
+)
+const orders = computed(
+  () => results.value.find(r => r.url.includes('orders'))?.data as Order[] | undefined
+)
+const notifications = computed(
+  () => results.value.find(r => r.url.includes('notifications'))?.data as Notification[] | undefined
+)
+</script>
+
+<template>
+  <div v-if="loading">
+    Loading dashboard... {{ progress.percentage }}%
+  </div>
+  <div v-else>
+    <div v-if="stats">
+      <p>Total users: {{ stats.totalUsers }}</p>
+      <p>Revenue: \${{ stats.revenue }}</p>
+    </div>
+    <ul v-if="orders">
+      <li v-for="order in orders" :key="order.id">\${{ order.total }}</li>
+    </ul>
+    <ul v-if="notifications">
+      <li v-for="n in notifications" :key="n.id">{{ n.text }}</li>
+    </ul>
+  </div>
+</template>
+```
+
+---
+
+### 5. Login + Token Save + Logout
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useApi, tokenManager } from '@ametie/vue-muza-use'
+import { useRouter } from 'vue-router'
+
+interface LoginResponse {
+  accessToken: string
+  refreshToken: string
+  expiresIn: number
+}
+
+const router = useRouter()
+const credentials = ref({ email: '', password: '' })
+
+const { execute: login, loading, error } = useApi<LoginResponse>(
+  '/auth/login',
+  {
+    method: 'POST',
+    authMode: 'public',
+    data: credentials,
+    onSuccess(response) {
+      tokenManager.setTokens({
+        accessToken: response.data.accessToken,
+        refreshToken: response.data.refreshToken,
+        expiresIn: response.data.expiresIn
+      })
+      router.push('/dashboard')
+    }
+  }
+)
+
+function logout() {
+  tokenManager.clearTokens()
+  router.push('/login')
+}
+</script>
+
+<template>
+  <form @submit.prevent="login()">
+    <input v-model="credentials.email" type="email" placeholder="Email" />
+    <input
+      v-model="credentials.password"
+      type="password"
+      placeholder="Password"
+    />
+    <p v-if="error">{{ error.message }}</p>
+    <button :disabled="loading">
+      {{ loading ? 'Signing in...' : 'Login' }}
+    </button>
+  </form>
+</template>
+```
+
+---
+
+### 6. Polling Status Until Done
+
+Start polling every 2 seconds and stop automatically when the job reaches a terminal status.
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useApi } from '@ametie/vue-muza-use'
+
+interface JobStatus {
+  id: string
+  status: 'pending' | 'processing' | 'complete' | 'failed'
+  progress: number
+}
+
+const jobId = ref<string | null>(null)
+const pollInterval = ref(0)
+
+const { data: job, error } = useApi<JobStatus>(
+  () => jobId.value ? `/jobs/${jobId.value}` : undefined,
+  {
+    watch: jobId,
+    poll: { interval: pollInterval },
+    onSuccess(response) {
+      const { status } = response.data
+      if (status === 'complete' || status === 'failed') {
+        pollInterval.value = 0  // Stop polling
+      }
+    }
+  }
+)
+
+function startJob(id: string) {
+  jobId.value = id
+  pollInterval.value = 2000  // Start polling every 2s
+}
+</script>
+
+<template>
+  <div>
+    <button @click="startJob('job-123')">Start Job</button>
+    <div v-if="job">
+      Status: {{ job.status }} — {{ job.progress }}%
+    </div>
+    <p v-if="error">{{ error.message }}</p>
+  </div>
+</template>
+```
+
+---
+
+## 🔍 Troubleshooting
+
+| Problem | Likely Cause | Fix |
+|---------|--------------|-----|
+| `"createApi config not found"` | `createApi()` not called | Call `app.use(createApi(...))` in `main.ts` before mounting |
+| Request fires twice on mount | `immediate: true` AND `watch` on a ref both trigger on setup | Use only `immediate` OR `watch` for the first load — not both |
+| `retry` option does nothing | Default is `retry: false` | Set `retry: true` or `retry: 3` |
+| ALL errors trigger retry, not just some | `retryStatusCodes` not set — uses library default | Specify exact codes or use `retryStatusCodes: []` to retry on any error |
+| `ignoreUpdates` still triggers a request | Updater function contains an `await` | `ignoreUpdates` is sync-only — move async logic outside the updater |
+| `DebounceCancelledError` in console | Not handling cancelled debounce calls | Catch `DebounceCancelledError` when you `await execute()` directly |
+| 401 not refreshing token | `authMode: 'public'` or `'optional'` set on the request | Change to `authMode: 'default'` for endpoints that require auth |
+| Token not sent on requests | `withAuth: false` in `createApiClient` | Remove `withAuth: false` — it defaults to `true` |
+| Cookie not sent on refresh request | `refreshWithCredentials` not set | Set `refreshWithCredentials: true` in `authOptions` |
+| Batch request not sending body | URL passed as a plain string | Use `BatchRequestConfig` object: `{ url, method: 'POST', data }` |
+| `useApi` outside a component throws | Missing Vue provide context | `createApi` uses global config — should work anywhere after `app.use()` |
+| Two Axios instances break token refresh | `isRefreshing` is module-level state | Use one `createApiClient` per app; multiple instances share internal state |
+
+---
+
+## 📄 Changelog / Migration
+
+See [GitHub Releases](https://github.com/ametie/vue-muza-use/releases) for version history.
 
 ---
 
@@ -1416,5 +2141,3 @@ MIT © [Ametie](https://github.com/ametie)
 ## 🙏 Acknowledgments
 
 Built with ❤️ for the Vue.js community. Inspired by real-world challenges in modern web applications.
-
-

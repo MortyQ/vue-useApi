@@ -63,6 +63,27 @@ export interface UseApiReturn<T = unknown, D = unknown> {
     abort: (message?: string) => void;
     reset: () => void;
     /**
+     * Run `updater` without triggering the watch-based auto re-execution.
+     *
+     * Useful for atomically updating multiple reactive sources (filters, pagination refs,
+     * form fields) without firing intermediate requests. After the updater runs, call
+     * `execute()` manually to fetch with the new values.
+     *
+     * **Synchronous only** — reactive changes that occur after an `await` inside the
+     * updater will NOT be suppressed (the flag resets after the synchronous portion).
+     *
+     * Safe to call even when no `watch` option is configured — the updater still runs,
+     * no error is thrown.
+     *
+     * @example
+     * ignoreUpdates(() => {
+     *   filters.value.page = 1
+     *   filters.value.search = 'john'
+     * })
+     * await execute() // single request with all new values
+     */
+    ignoreUpdates: (updater: () => void) => void;
+    /**
      * Manually mutate data. Supports direct value or updater function.
      * Clears any existing error when called.
      *
