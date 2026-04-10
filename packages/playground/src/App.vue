@@ -7,6 +7,7 @@ import LoginForm from "./components/LoginForm.vue";
 import {computed} from "vue";
 import {tokenManager} from "@ametie/vue-muza-use";
 import PromiseAllDemo from "./components/PromiseAllDemo.vue";
+import CacheDemo from "./components/CacheDemo.vue";
 
 </script>
 
@@ -14,6 +15,7 @@ import PromiseAllDemo from "./components/PromiseAllDemo.vue";
   <div>
     <login-form/>
     <promise-all-demo/>
+    <cache-demo/>
 <!--    <PollingDemo />-->
 <!--    <hr style="margin: 40px 0; border: none; border-top: 1px solid #ddd;" />-->
 

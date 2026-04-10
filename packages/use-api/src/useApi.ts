@@ -6,13 +6,29 @@ import type {
     UseApiOptions,
     UseApiReturn,
     ApiRequestConfig,
+    CacheOptions,
 } from "./types";
 import { useApiConfig } from "./plugin";
 import { parseApiError } from "./utils/errorParser";
 import { useApiState } from "./composables/useApiState";
 import { useAbortController } from "./composables/useAbortController";
+import { readCache, writeCache, invalidateCache as cacheInvalidate, DEFAULT_STALE_TIME } from "./features/cacheManager";
 
 const DEFAULT_RETRY_STATUS_CODES = [408, 429, 500, 502, 503, 504];
+
+/**
+ * Normalise the `cache` option into a consistent shape with a guaranteed `staleTime`.
+ * Returns null if caching is not configured.
+ */
+function normalizeCacheOptions(
+    cache: string | CacheOptions | undefined,
+): { id: string; staleTime: number } | null {
+    if (!cache) return null;
+    if (typeof cache === "string") {
+        return { id: cache, staleTime: DEFAULT_STALE_TIME };
+    }
+    return { id: cache.id, staleTime: cache.staleTime ?? DEFAULT_STALE_TIME };
+}
 
 /**
  * Cancellable sleep — resolves `true` if aborted before delay elapsed, `false` otherwise.
@@ -75,6 +91,33 @@ export function useApi<T = unknown, D = unknown>(
     };
 
     const executeRequest = async (config?: ApiRequestConfig<D>): Promise<T | null> => {
+        /**
+         * Cache hit behavior:
+         * - mutate() called with cached data
+         * - loading stays false
+         * - onBefore / onSuccess / onFinish NOT called
+         * - axios request NOT made
+         *
+         * Cache write: only on HTTP 2xx success
+         * Cache invalidation: only on HTTP 2xx success
+         *
+         * staleTime default: 300_000ms (5 minutes)
+         * Expired entries are deleted on next read attempt
+         *
+         * The cache is module-level (singleton).
+         * All useApi instances in the app share the same cache.
+         * Use clearAllCache() on logout to prevent data leaks between users.
+         */
+        const cacheOpts = normalizeCacheOptions(options.cache);
+
+        if (cacheOpts) {
+            const cached = readCache<T>(cacheOpts.id);
+            if (cached !== null) {
+                state.mutate(cached);
+                return cached;
+            }
+        }
+
         // Clear previous poll timer to avoid overlaps if manual execute happened
         if (pollTimer) clearTimeout(pollTimer);
         const requestUrl = toValue(url);
@@ -133,6 +176,17 @@ export function useApi<T = unknown, D = unknown>(
 
                     state.mutate(response.data as T | null, response);
                     state.setStatusCode(response.status);
+
+                    // Cache WRITE — only on 2xx success
+                    if (cacheOpts) {
+                        writeCache(cacheOpts.id, response.data, cacheOpts.staleTime);
+                    }
+
+                    // Cache INVALIDATION — only on 2xx success, never in catch/finally
+                    if (options.invalidateCache) {
+                        cacheInvalidate(options.invalidateCache);
+                    }
+
                     onSuccess?.(response);
                     return response.data;
 

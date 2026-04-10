@@ -11,6 +11,15 @@ export interface ApiError {
 
 export type AuthMode = "default" | "public" | "optional";
 
+export interface CacheOptions {
+    id: string;
+    /**
+     * How long the cached entry is valid in milliseconds.
+     * Default: 300_000 (5 minutes)
+     */
+    staleTime?: number;
+}
+
 export interface ApiState<T = unknown> {
     data: T | null
     loading: boolean
@@ -50,6 +59,22 @@ export interface UseApiOptions<T = unknown, D = unknown> extends ApiRequestConfi
      * - Pass an **object** `{ interval: number, whenHidden?: boolean }` for advanced control.
      * Properties inside the object can also be Refs.
      */
+    /**
+     * Cache the response data by a string id.
+     * - String shorthand: `cache: 'key'` uses DEFAULT_STALE_TIME (5 min)
+     * - Object form: `cache: { id: 'key', staleTime: 10_000 }` for custom TTL
+     *
+     * On cache hit: mutate() is called with cached data, loading stays false,
+     * onBefore/onSuccess/onFinish are NOT called, axios request is NOT made.
+     * Cache is written only on HTTP 2xx success.
+     */
+    cache?: string | CacheOptions;
+    /**
+     * Invalidate one or more cache entries on HTTP 2xx success.
+     * Fires only after a confirmed successful response — never in catch/finally.
+     * Useful for POST/PUT/DELETE that should bust related GET caches.
+     */
+    invalidateCache?: string | string[];
     poll?: MaybeRefOrGetter<number | { interval: MaybeRefOrGetter<number>; whenHidden?: MaybeRefOrGetter<boolean> }>;
 }
 

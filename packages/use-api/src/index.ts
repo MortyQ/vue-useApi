@@ -16,3 +16,4 @@ export { createApiClient } from "./features/createInstance";
 export { setupInterceptors } from "./features/interceptors";
 export { tokenManager } from "./features/tokenManager";
 export { setAuthMonitor, AuthEventType, type AuthEventPayload, type AuthMonitorFn } from "./features/monitor";
+export { invalidateCache, clearAllCache } from "./features/cacheManager";
