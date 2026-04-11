@@ -5,7 +5,7 @@
 [![Vue 3](https://img.shields.io/badge/Vue-3.x-green.svg?style=flat-square)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Included-blue.svg?style=flat-square)](https://www.typescriptlang.org/)
 
-**Type-safe, feature-rich Axios wrapper for Vue 3 Composition API. Built for real-world business logic.**
+**Type-safe, feature-rich Axios wrapper for Vue 3 Composition API. Built for real-world business logic. **
 
 A production-ready composable that eliminates boilerplate and solves the hard problems: race conditions, token refresh queues, automatic retries, and reactive request management. Write less code, ship faster, sleep better.
 
