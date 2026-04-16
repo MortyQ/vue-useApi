@@ -17,6 +17,7 @@ import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 import type { AxiosInstance, AxiosResponse } from 'axios'
 import { useApi } from './useApi'
+import type { UseApiOptions } from './types'
 import { createApi } from './plugin'
 import { clearAllCache } from './features/cacheManager'
 
@@ -51,13 +52,13 @@ function resolveWith(data: unknown, status = 200) {
 
 function mountSelect<T, TSelected>(
     selectFn: (data: T) => TSelected,
-    extra: Parameters<typeof useApi>[1] = {},
+    extra: Omit<NonNullable<Parameters<typeof useApi>[1]>, 'select'> = {},
 ) {
     let api!: ReturnType<typeof useApi<T, unknown, TSelected>>
     mount(
         defineComponent({
             setup() {
-                api = useApi<T, unknown, TSelected>('/test', { select: selectFn, ...extra })
+                api = useApi<T, unknown, TSelected>('/test', { select: selectFn, ...extra } as UseApiOptions<T, unknown, TSelected>)
                 return () => null
             },
         }),

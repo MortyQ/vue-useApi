@@ -1,4 +1,5 @@
 import { ref, computed, effectScope, getCurrentScope, onScopeDispose, toValue, watch, type Ref, type MaybeRefOrGetter } from "vue";
+import type { AxiosResponse } from "axios";
 import { useApi } from "./useApi";
 import type {
     UseApiBatchOptions,
@@ -160,7 +161,7 @@ export function useApiBatch<T = unknown>(
                 data: result ?? null,
                 error: reqError.value,
                 statusCode: statusCode.value,
-                response: response.value,
+                response: response.value as AxiosResponse<T> | null,
                 request: config,
             };
 
