@@ -44,12 +44,12 @@ Do not write raw HTTP logic directly in components when a feature API layer is a
 This codebase uses a feature API wrapper pattern:
 
 - Components do not call `useApiPost` / `useApiGet` directly.
-- Components call a feature composable like `useSalesAndTraffic()`.
+- Components call a feature composable like `useProducts()` or `useOrders()`.
 - That composable returns typed request factories such as:
-  - `fetchBrandSalesTable`
-  - `downloadBrandSalesTable`
-  - `fetchTopProductSalesTable`
-  - `downloadTopProductSalesTable`
+  - `fetchProducts`
+  - `saveProduct`
+  - `downloadProducts`
+  - `deleteProduct`
 - Those factories internally call `useApi*` with:
   - explicit URL,
   - explicit response typing,
@@ -82,7 +82,9 @@ All runtime request behavior is passed from the component into the returned fact
 Example:
 
 ```
-/feature/salesAndTraffic/api/useSalesAndTraffic.ts
+/feature/products/api/useProducts.ts
+/feature/orders/api/useOrders.ts
+/feature/users/api/useUsers.ts
 ```
 
 This file exports one composable that returns all request factories for that domain.
@@ -108,41 +110,31 @@ Prefer descriptive domain names. Avoid vague names like `requestData`, `loadStuf
 ### Correct pattern
 
 ```ts
-import { useApiPost, UseApiOptions } from "@ametie/vue-muza-use";
-
-import { BrandSalesRow, TopProductSalesRow } from "@/features/salesAndTraffic/types";
-import { PaginatedResponse } from "@/shared/types/table";
+import { useApiGet, useApiPost, useApiDelete, UseApiOptions } from "@ametie/vue-muza-use";
+import type { Product } from "@/features/products/types";
 
 export default () => {
-  const fetchBrandSalesTable = (
-    options?: UseApiOptions<PaginatedResponse<BrandSalesRow>>,
-  ) => {
-    return useApiPost("/sales", options);
-  };
+  const fetchProducts = (options?: UseApiOptions<Product[]>) =>
+    useApiGet("/products", options);
 
-  const downloadBrandSalesTable = (
-    options?: UseApiOptions<Blob>,
-  ) => {
-    return useApiPost("/sales/export-brand-details", options);
-  };
+  const fetchProduct = (id: number, options?: UseApiOptions<Product>) =>
+    useApiGet(`/products/${id}`, options);
 
-  const fetchTopProductSalesTable = (
-    options?: UseApiOptions<PaginatedResponse<TopProductSalesRow>>,
-  ) => {
-    return useApiPost("/sales/brand-products", { ...options });
-  };
+  const saveProduct = (options?: UseApiOptions<Product>) =>
+    useApiPost("/products", options);
 
-  const downloadTopProductSalesTable = (
-    options?: UseApiOptions<Blob>,
-  ) => {
-    return useApiPost("/sales/export-product-details", options);
-  };
+  const downloadProducts = (options?: UseApiOptions<Blob>) =>
+    useApiPost("/products/export", options);
+
+  const deleteProduct = (id: number, options?: UseApiOptions<void>) =>
+    useApiDelete(`/products/${id}`, options);
 
   return {
-    fetchBrandSalesTable,
-    downloadBrandSalesTable,
-    fetchTopProductSalesTable,
-    downloadTopProductSalesTable,
+    fetchProducts,
+    fetchProduct,
+    saveProduct,
+    downloadProducts,
+    deleteProduct,
   };
 };
 ```
@@ -158,34 +150,24 @@ export default () => {
 ## Component usage pattern
 
 ```ts
-const { fetchBrandSalesTable, downloadBrandSalesTable } = useSalesAndTraffic();
+const { fetchProducts, downloadProducts } = useProducts();
 
-const page = useTablePage();
-const sort = ref<SortItem[]>([
-  { field: "DATE", order: "desc" },
-  { field: "SALES", order: "desc" },
-]);
+const page = ref(1);
+const sort = ref({ field: "createdAt", order: "desc" });
+const filters = ref({ status: "active", search: "" });
 
-const { loading, data } = fetchBrandSalesTable({
-  data: () => ({
-    ...filterStore.tableRequestParams,
-    ...periodState.value.params,
-    isGroupByDate: periodState.value.isGroupByDate,
-    limit: 10,
+const { loading, data } = fetchProducts({
+  params: () => ({
+    ...filters.value,
     page: page.value,
     sort: sort.value,
   }),
-  watch: [sort, page, () => filterStore.tableRequestParams, periodState],
+  watch: [page, sort, filters],
   immediate: true,
 });
 
-const { loading: downloadLoading, execute: downloadExecute } = downloadBrandSalesTable({
-  data: () => ({
-    ...filterStore.tableRequestParams,
-    ...periodState.value.params,
-    isGroupByDate: periodState.value.isGroupByDate,
-    sort: sort.value,
-  }),
+const { loading: downloadLoading, execute: download } = downloadProducts({
+  params: () => ({ ...filters.value, sort: sort.value }),
   responseType: "blob",
   onSuccess: downloadFromResponse,
 });

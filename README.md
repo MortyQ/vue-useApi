@@ -999,7 +999,10 @@ const toggleTodo = (id: number) => {
 }
 ```
 
-#### Transform in `onSuccess`
+#### Transform after fetch
+
+Use `mutate` from the **same** `useApi` call to post-process data after it arrives:
+
 ```typescript
 import { useApi } from '@ametie/vue-muza-use'
 
@@ -1010,7 +1013,7 @@ interface User {
   fullName?: string
 }
 
-const { data } = useApi<User[]>('/users', {
+const { data, mutate } = useApi<User[]>('/users', {
   immediate: true,
   onSuccess: ({ data: users }) => {
     mutate(users.map(u => ({
@@ -1019,9 +1022,12 @@ const { data } = useApi<User[]>('/users', {
     })))
   }
 })
-
-const { mutate } = useApi<User[]>('/users', { immediate: true })
 ```
+
+> [!TIP]
+> If the same transformation runs on every fetch (including polling or watch re-triggers),
+> use [`select`](#select--declarative-data-transformation) instead — it's applied automatically
+> and keeps your options object clean.
 
 ---
 
