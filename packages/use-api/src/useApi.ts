@@ -22,12 +22,12 @@ const DEFAULT_RETRY_STATUS_CODES = [408, 429, 500, 502, 503, 504];
  */
 function normalizeCacheOptions(
     cache: string | CacheOptions | undefined,
-): { id: string; staleTime: number } | null {
+): { id: string; staleTime: number; swr: boolean } | null {
     if (!cache) return null;
     if (typeof cache === "string") {
-        return { id: cache, staleTime: DEFAULT_STALE_TIME };
+        return { id: cache, staleTime: DEFAULT_STALE_TIME, swr: false };
     }
-    return { id: cache.id, staleTime: cache.staleTime ?? DEFAULT_STALE_TIME };
+    return { id: cache.id, staleTime: cache.staleTime ?? DEFAULT_STALE_TIME, swr: cache.swr ?? false };
 }
 
 /**
@@ -71,7 +71,6 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
         cache: _cache,
         invalidateCache: _invalidateCache,
         lazy = false,
-        staleWhileRevalidate = false,
         select,
         ...axiosConfig
     } = options;
@@ -133,7 +132,7 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
             const cached = readCache<T>(cacheOpts.id);
             if (cached !== null) {
                 state.mutate(applySelect(cached));
-                if (!staleWhileRevalidate) {
+                if (!cacheOpts.swr) {
                     return applySelect(cached);
                 }
                 // SWR: serve cache immediately, continue to fetch fresh data in background
