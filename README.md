@@ -5,7 +5,7 @@
 [![Vue 3](https://img.shields.io/badge/Vue-3.x-green.svg?style=flat-square)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Included-blue.svg?style=flat-square)](https://www.typescriptlang.org/)
 
-**Type-safe, feature-rich Axios wrapper for Vue 3 Composition API. Built for real-world business logic.**
+**TypeScript-first, feature-rich Axios wrapper for Vue 3 Composition API. Built for real-world business logic.**
 
 A production-ready composable that eliminates boilerplate and solves the hard problems: race conditions, token refresh queues, automatic retries, and reactive request management. Write less code, ship faster, sleep better.
 
@@ -22,14 +22,14 @@ A production-ready composable that eliminates boilerplate and solves the hard pr
 ## ✨ Features
 
 **Core Features** (Get started in minutes):
-- 🎯 **Fully Type-Safe** — End-to-end TypeScript support with strict typing for requests and responses
+- 🎯 **TypeScript-first** — Full TypeScript support with strict typing for requests and responses
 - 🔄 **Smart Reactivity** — Watch refs and automatically refetch when dependencies change
 - ⏱️ **Built-in Debouncing** — Perfect for search inputs and auto-save forms
 - 🛡️ **Race Condition Protection** — Global abort controller cancels stale requests automatically
 - 📊 **Auto-Polling** — Built-in interval fetching with smart tab visibility detection
 - 🚀 **Batch Requests** — Execute multiple requests in parallel with progress tracking
 - 🧹 **Zero Memory Leaks** — Automatic cleanup of pending requests on component unmount
-- 🔕 **ignoreUpdates** — Atomic updates without triggering intermediate requests
+- 🔕 **ignoreUpdates** — Update watched refs without triggering a re-fetch
 - 🗄️ **Response Caching** — In-memory cache with configurable TTL and manual invalidation
 - ⚡ **Stale-While-Revalidate** — Serve cached data instantly while refreshing silently in the background
 - 🔬 **select** — Transform or filter response data declaratively; re-applied on every fetch automatically
@@ -42,6 +42,35 @@ A production-ready composable that eliminates boilerplate and solves the hard pr
 
 ---
 
+## 🆚 How it compares
+
+> Honest comparison. ✅ built-in · ⚠️ partial or plugin needed · ❌ not supported
+
+| Feature | vue-muza-use | @vueuse/useFetch | TanStack Query | swrv |
+|---------|:---:|:---:|:---:|:---:|
+| **Axios-first** | ✅ | ❌ fetch | ⚠️ adapter | ❌ fetch |
+| **JWT auto-refresh + queue** | ✅ | ❌ | ❌ | ❌ |
+| **Race condition protection** | ✅ | ❌ | ✅ | ❌ |
+| **ignoreUpdates** | ✅ | ❌ | ❌ | ❌ |
+| **Built-in debounce** | ✅ | ❌ | ❌ | ❌ |
+| **Batch requests** | ✅ | ❌ | ❌ | ❌ |
+| **Built-in retry** | ✅ | ❌ | ✅ | ❌ |
+| **Auto-polling** | ✅ | ❌ | ✅ | ✅ |
+| **SWR (stale-while-revalidate)** | ✅ | ❌ | ✅ | ✅ |
+| **select / transform** | ✅ | ❌ | ✅ | ❌ |
+| **Response caching** | ✅ | ❌ | ✅ | ✅ |
+| **TypeScript** | ✅ | ✅ | ✅ | ✅ |
+| **SSR / Nuxt** | ❌ | ✅ | ✅ | ✅ |
+| **DevTools** | ❌ | ❌ | ✅ | ❌ |
+
+**Choose vue-muza-use if:** you build Vue 3 SPAs with Axios, need JWT token refresh out of the box, and want reactive request management without a heavyweight server-state solution.
+
+**Choose TanStack Query if:** you need SSR, DevTools, or advanced server-state normalization.
+
+**Choose @vueuse/useFetch if:** you want a minimal fetch wrapper with no opinions.
+
+---
+
 ## 📖 Table of Contents
 
 **Getting Started:**
@@ -51,7 +80,7 @@ A production-ready composable that eliminates boilerplate and solves the hard pr
 
 **Core Features:**
 - [Watch & Auto-Refetch](#watch--auto-refetch)
-  - [ignoreUpdates — Atomic Updates Without Refetch](#ignoreupdates--atomic-updates-without-refetch)
+  - [ignoreUpdates — Update Without Re-fetching](#ignoreupdates--update-without-re-fetching)
 - [Response Caching](#response-caching)
   - [Stale-While-Revalidate (SWR)](#stale-while-revalidate-swr)
 - [Polling (Background Updates)](#polling-background-updates)
@@ -415,102 +444,52 @@ useApi('/user/settings', {
 
 ---
 
-### ignoreUpdates — Atomic Updates Without Refetch
+### ignoreUpdates — Update Without Re-fetching
 
-**TL;DR: Change multiple reactive values at once without triggering a request between each change.**
+**TL;DR: Update a watched ref without triggering the watcher.**
 
-When `watch` is active, every change to a watched ref triggers a new request. If you need to update three filter fields at once, you'd get three requests instead of one. `ignoreUpdates` wraps your changes so the watcher stays silent while you update all fields, then you call `execute()` once.
+When `watch` is configured, any change to a watched ref fires a new request. `ignoreUpdates` lets you change those refs silently — the watcher is suppressed for the duration of the callback.
 
-#### ❌ Without ignoreUpdates — 2 requests fire
-
-```typescript
-import { ref } from 'vue'
-import { useApi } from '@ametie/vue-muza-use'
-
-const page = ref(1)
-const search = ref('')
-
-const { execute } = useApi('/users', {
-  params: { page, search },
-  watch: [page, search]
-})
-
-// BAD: each assignment triggers a separate request
-page.value = 1    // → request 1: page=1, search=''
-search.value = 'john'  // → request 2: page=1, search=john
-```
-
-#### ✅ With ignoreUpdates — 1 request fires
+#### Example — clear search input without fetching
 
 ```typescript
 import { ref } from 'vue'
 import { useApi } from '@ametie/vue-muza-use'
 
-const page = ref(1)
 const search = ref('')
 
-const { execute, ignoreUpdates } = useApi('/users', {
-  params: { page, search },
-  watch: [page, search]
+const { data, ignoreUpdates } = useApi('/products', {
+  params: () => ({ q: search.value }),
+  watch: [search],
+  debounce: 300,
 })
 
-// GOOD: all changes are batched, only one request fires
-ignoreUpdates(() => {
-  page.value = 1
-  search.value = 'john'
-})
-await execute()  // → single request: page=1, search=john
-```
-
-#### Reset filters without auto-fetching
-
-Use `ignoreUpdates` to reset all filters to their defaults, then manually trigger a single request.
-
-```typescript
-import { ref } from 'vue'
-import { useApi } from '@ametie/vue-muza-use'
-
-const page = ref(1)
-const search = ref('')
-const status = ref('all')
-
-const { execute, ignoreUpdates } = useApi('/users', {
-  params: { page, search, status },
-  watch: [page, search, status]
-})
-
-function resetFilters() {
+function clearSearch() {
   ignoreUpdates(() => {
-    page.value = 1
     search.value = ''
-    status.value = 'all'
   })
-  execute()  // single request with reset values
+  // watch is suppressed — no request fires
 }
 ```
+
+The user types → watch fires → debounced request. Clicking "Clear" resets the input without triggering a fetch.
 
 #### Safe to call without a watch option
 
 If no `watch` option is configured, `ignoreUpdates` still runs the updater — it just has nothing to suppress.
 
 ```typescript
-import { ref } from 'vue'
-import { useApi } from '@ametie/vue-muza-use'
-
-const counter = ref(0)
 const { ignoreUpdates } = useApi('/data')
 
-// Safe — no error thrown, updater still runs
 ignoreUpdates(() => {
-  counter.value = 42
+  someRef.value = 42  // runs normally, nothing to suppress
 })
 ```
 
 > [!NOTE]
 > `ignoreUpdates` is synchronous only. Changes made after an `await` inside the
 > updater function will NOT be suppressed — the flag resets after the synchronous
-> portion completes. If you need to update async values, update them outside
-> `ignoreUpdates` and call `execute()` manually.
+> portion completes.
 
 ---
 
@@ -2202,7 +2181,7 @@ function logout() {
 
 ### 1. Search with Debounce and Reset
 
-Full component: debounced search that resets cleanly without triggering an intermediate request.
+Debounced search input. Typing triggers a request; "Clear" resets the input silently without fetching.
 
 ```vue
 <script setup lang="ts">
@@ -2216,30 +2195,26 @@ interface User {
 }
 
 const search = ref('')
-const page = ref(1)
 
-const { data, loading, execute, ignoreUpdates } = useApi<User[]>(
-  () => `/users?search=${search.value}&page=${page.value}`,
-  {
-    watch: [search, page],
-    debounce: 400,
-    immediate: true
-  }
-)
+const { data, loading, ignoreUpdates } = useApi<User[]>('/users', {
+  params: () => ({ q: search.value }),
+  watch: [search],
+  debounce: 400,
+  immediate: true,
+})
 
-function resetSearch() {
+function clearSearch() {
   ignoreUpdates(() => {
     search.value = ''
-    page.value = 1
   })
-  execute()  // single request with reset values
+  // watch is suppressed — no request fires on clear
 }
 </script>
 
 <template>
   <div>
     <input v-model="search" placeholder="Search users..." />
-    <button @click="resetSearch">Clear</button>
+    <button @click="clearSearch">Clear</button>
 
     <div v-if="loading">Searching...</div>
     <ul v-else>
@@ -2255,7 +2230,7 @@ function resetSearch() {
 
 ### 2. Paginated List with Filter Reset
 
-When the user changes a filter, reset the page to 1 using `ignoreUpdates` so only one request fires.
+When the user changes a filter, also reset the page to 1. Vue batches synchronous ref changes, so the watcher fires once — no `ignoreUpdates` needed here.
 
 ```vue
 <script setup lang="ts">
@@ -2271,18 +2246,16 @@ interface Post {
 const page = ref(1)
 const status = ref('all')
 
-const { data, loading, execute, ignoreUpdates } = useApi<Post[]>(
-  () => `/posts?status=${status.value}&page=${page.value}`,
-  { watch: [status, page], immediate: true }
-)
+const { data, loading } = useApi<Post[]>('/posts', {
+  params: () => ({ status: status.value, page: page.value }),
+  watch: [status, page],
+  immediate: true,
+})
 
 function changeStatus(newStatus: string) {
-  // Reset page to 1 when filter changes — one request, not two
-  ignoreUpdates(() => {
-    status.value = newStatus
-    page.value = 1
-  })
-  execute()
+  status.value = newStatus
+  page.value = 1
+  // Vue batches these sync changes — watch fires once, one request
 }
 </script>
 
