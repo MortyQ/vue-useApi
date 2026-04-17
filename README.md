@@ -464,7 +464,7 @@ page.value = 1
 
 ### ignoreUpdates — Update Without Re-fetching
 
-**TL;DR: Update a watched ref without triggering the watcher.**
+**TL;DR: Update a reactive dep without triggering auto-tracking.**
 
 When auto-tracking is active, any reactive dep change fires a new request. `ignoreUpdates` pauses the tracking scope for the duration of the callback — changes inside do not trigger a re-fetch.
 
@@ -491,7 +491,7 @@ function clearSearch() {
 
 The user types → auto-tracking fires → debounced request. Clicking "Clear" resets the input without triggering a fetch.
 
-#### Safe to call without a watch option
+#### Safe to call when `lazy: true`
 
 If `lazy: true`, `ignoreUpdates` still runs the updater — it just has nothing to suppress.
 
@@ -619,7 +619,7 @@ invalidateCache(['products', 'categories'])
 clearAllCache()
 ```
 
-#### cache + watch
+#### cache + auto-tracking
 
 When auto-tracking is active, each dep-change-triggered `execute()` still checks the cache first:
 
