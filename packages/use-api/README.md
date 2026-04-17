@@ -669,6 +669,7 @@ const { data } = useApi('/reports', {
 |-------|------|---------|-------------|
 | `id` | `string` | — | Unique cache key |
 | `staleTime` | `number` | `300_000` | TTL in milliseconds. Entry is deleted on next read after this time |
+| `swr` | `boolean` | `false` | Stale-while-revalidate: serve cached data instantly while revalidating in the background. See [SWR](#stale-while-revalidate-swr) |
 
 #### Out of Scope (by design)
 
@@ -1420,6 +1421,8 @@ createApp(App).use(createApi({
 | `retryDelay` | `number` | `1000` | How many milliseconds to wait between retry attempts for all requests |
 | `retryStatusCodes` | `number[]` | `[408,429,500,502,503,504]` | Default HTTP status codes that trigger a retry across all requests |
 | `useGlobalAbort` | `boolean` | `true` | When `true`, all requests subscribe to the global abort controller |
+| `refetchOnFocus` | `boolean \| { throttle?: number }` | `undefined` | Apply `refetchOnFocus` to all `useApi` instances. Per-request value takes precedence (including `false` to opt-out) |
+| `refetchOnReconnect` | `boolean` | `undefined` | Apply `refetchOnReconnect` to all `useApi` instances. Per-request value takes precedence (including `false` to opt-out) |
 
 ---
 
