@@ -7,7 +7,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
+import { mount, enableAutoUnmount } from '@vue/test-utils'
+enableAutoUnmount(afterEach)
 import type { AxiosInstance } from 'axios'
 import { useApi } from './useApi'
 import { createApi } from './plugin'
@@ -82,7 +83,7 @@ describe('useApi — refetchOnFocus', () => {
     it('re-fetches when tab becomes visible (throttle: 0)', async () => {
         resolveWith('first')
         const api = mountApi({ refetchOnFocus: { throttle: 0 }, immediate: true })
-        await api.execute()
+        await flush()
 
         expect(api.data.value).toBe('first')
         expect(mockAxios.request).toHaveBeenCalledTimes(1)
@@ -171,7 +172,7 @@ describe('useApi — refetchOnReconnect', () => {
     it('re-fetches when network comes online', async () => {
         resolveWith('first')
         const api = mountApi({ refetchOnReconnect: true, immediate: true })
-        await api.execute()
+        await flush()
 
         resolveWith('second')
         simulateOnline()
@@ -210,7 +211,7 @@ describe('useApi — global refetchOnFocus / refetchOnReconnect', () => {
     it('applies global refetchOnFocus to all instances', async () => {
         resolveWith('first')
         const api = mountApi({ immediate: true }, { refetchOnFocus: { throttle: 0 } })
-        await api.execute()
+        await flush()
 
         resolveWith('second')
         simulateFocus()
@@ -225,7 +226,7 @@ describe('useApi — global refetchOnFocus / refetchOnReconnect', () => {
             { refetchOnFocus: false, immediate: true },
             { refetchOnFocus: { throttle: 0 } },
         )
-        await api.execute()
+        await flush()
 
         vi.clearAllMocks()
         simulateFocus()
@@ -237,7 +238,7 @@ describe('useApi — global refetchOnFocus / refetchOnReconnect', () => {
     it('applies global refetchOnReconnect to all instances', async () => {
         resolveWith('first')
         const api = mountApi({ immediate: true }, { refetchOnReconnect: true })
-        await api.execute()
+        await flush()
 
         resolveWith('second')
         simulateOnline()

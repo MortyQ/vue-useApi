@@ -91,10 +91,6 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
     // notifyFetched is reassigned after execute() is defined — see useRefetchTriggers wiring below
     let notifyFetched: () => void = () => {}
-    // Coalescing state — tracks the current in-flight no-config promise so that
-    // `immediate: true` + `await execute()` result in a single axios request.
-    let _inflightPromise: Promise<TSelected | null> | null = null;
-    let _inflightUrl: string | null = null;
 
     // Helper to resolve poll config
     const getPollConfig = () => {
@@ -305,45 +301,17 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
     // When debounce is active, superseded calls are rejected with DebounceCancelledError.
     // Swallow it here so callers of execute() always get null (not an unhandled rejection).
     const _debounced = debounce > 0 ? debounceFn(executeRequest, debounce) : null;
-    const _rawExecute: typeof executeRequest = _debounced
+    const execute: typeof executeRequest = _debounced
         ? (config?) => _debounced(config).catch((err) => {
             if (err instanceof DebounceCancelledError) return null;
             throw err;
         })
         : executeRequest;
 
-    // Coalescing: when called with no config (and no debounce), return the in-flight promise
-    // if the URL hasn't changed. This prevents double-requests when `immediate: true` fires at
-    // setup time and the caller also awaits execute() — both share the same in-flight request.
-    // Coalescing is intentionally disabled when debounce is active (debounce has its own
-    // superseding semantics that must not be bypassed).
-    // The cleanup handler is registered before the caller awaits, so it always runs first.
-    const _clearInflight = () => { _inflightPromise = null; _inflightUrl = null; };
-    const execute: typeof executeRequest = (config?) => {
-        if (debounce > 0) {
-            return _rawExecute(config);
-        }
-        const effectiveUrl = String(toValue((config as ApiRequestConfig<D> | undefined)?.url ?? url) ?? '');
-        if (config === undefined && _inflightPromise !== null && effectiveUrl === _inflightUrl) {
-            return _inflightPromise;
-        }
-        const p = _rawExecute(config);
-        if (config === undefined) {
-            _inflightUrl = effectiveUrl;
-            _inflightPromise = p;
-            // Register cleanup BEFORE caller's await — runs on the same microtask hop as the test's continuation
-            // but enqueued first, ensuring _inflightPromise is null before the test continues.
-            p.then(_clearInflight, _clearInflight);
-        }
-        return p;
-    };
-
     const abort = (msg?: string) => {
         if (pollTimer) clearTimeout(pollTimer);
         abortController.value?.abort(msg);
         abortController.value = null;
-        _inflightPromise = null;
-        _inflightUrl = null;
     };
 
     const reset = () => {
