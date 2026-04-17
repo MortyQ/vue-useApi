@@ -89,7 +89,7 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
     const abortController = ref<AbortController | null>(null);
     const globalAbort = useGlobalAbort ? useAbortController() : null;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
-    // notifyFetched is reassigned after execute() is defined — see useRefetchTriggers wiring below
+    // notifyFetched is reassigned after reset() is defined — see useRefetchTriggers wiring below
     let notifyFetched: () => void = () => {};
 
     // Helper to resolve poll config
@@ -221,7 +221,7 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
                     }
 
                     onSuccess?.(response);
-                    notifyFetched()
+                    notifyFetched(); // reset focus-throttle clock — only on success, not on error
                     return selected;
 
                 } catch (err: unknown) {

@@ -163,6 +163,30 @@ describe('useApi — refetchOnFocus', () => {
         resolveHang({ data: 'done', status: 200 })
         await flush()
     })
+
+    it('does NOT fire duplicate request when both poll and refetchOnFocus are active on tab focus', async () => {
+        // Both poll's visibilitychange handler and useRefetchTriggers' handler fire on focus.
+        // The !loading guard on useRefetchTriggers prevents duplicate requests.
+        let resolveFirst!: (v: unknown) => void
+        ;(mockAxios.request as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+            new Promise(resolve => { resolveFirst = resolve }),
+        )
+
+        const api = mountApi({ refetchOnFocus: { throttle: 0 }, poll: 30_000 })
+        api.execute() // in-flight
+
+        expect(api.loading.value).toBe(true)
+
+        // Tab becomes visible while request is in-flight
+        simulateFocus()
+        await flush()
+
+        // Both handlers fired, but useRefetchTriggers blocked because loading: true
+        expect(mockAxios.request).toHaveBeenCalledTimes(1)
+
+        resolveFirst({ data: 'done', status: 200 })
+        await flush()
+    })
 })
 
 // ---------------------------------------------------------------------------
@@ -211,7 +235,7 @@ describe('useApi — refetchOnReconnect', () => {
 describe('useApi — global refetchOnFocus / refetchOnReconnect', () => {
     it('applies global refetchOnFocus to all instances', async () => {
         resolveWith('first')
-        const api = mountApi({ immediate: true }, { refetchOnFocus: { throttle: 0 } })
+        mountApi({ immediate: true }, { refetchOnFocus: { throttle: 0 } })
         await flush()
 
         resolveWith('second')
@@ -223,7 +247,7 @@ describe('useApi — global refetchOnFocus / refetchOnReconnect', () => {
 
     it('per-request refetchOnFocus: false overrides global true', async () => {
         resolveWith('first')
-        const api = mountApi(
+        mountApi(
             { refetchOnFocus: false, immediate: true },
             { refetchOnFocus: { throttle: 0 } },
         )
@@ -238,7 +262,7 @@ describe('useApi — global refetchOnFocus / refetchOnReconnect', () => {
 
     it('applies global refetchOnReconnect to all instances', async () => {
         resolveWith('first')
-        const api = mountApi({ immediate: true }, { refetchOnReconnect: true })
+        mountApi({ immediate: true }, { refetchOnReconnect: true })
         await flush()
 
         resolveWith('second')
