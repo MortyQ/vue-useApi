@@ -6,7 +6,7 @@ Format: [Semantic Versioning](https://semver.org/)
 
 ---
 
-## [0.10.0] — 2025
+## [0.10.0] — 2026-04-16
 
 ### Added
 - `select` option — transform response data before storing in `data`. Third generic `TSelected` on `UseApiOptions<T, D, TSelected>`.
@@ -20,7 +20,7 @@ Format: [Semantic Versioning](https://semver.org/)
 
 ---
 
-## [0.9.2] — 2025
+## [0.9.2] — 2026-04-16
 
 ### Added
 - Full test coverage (100+ tests).
@@ -29,14 +29,14 @@ Format: [Semantic Versioning](https://semver.org/)
 
 ---
 
-## [0.9.1] — 2025
+## [0.9.1] — 2026-04-10
 
 ### Fixed
 - Cache documentation.
 
 ---
 
-## [0.9.0] — 2025
+## [0.9.0] — 2026-04-10
 
 ### Added
 - `cache` option — in-memory response cache with configurable TTL.
@@ -44,49 +44,49 @@ Format: [Semantic Versioning](https://semver.org/)
 
 ---
 
-## [0.8.0] — 2025
+## [0.8.0] — 2026-04-09
 
 ### Added
 - `ignoreUpdates` — update watched refs without triggering a re-fetch.
 
 ---
 
-## [0.7.0] — 2025
+## [0.7.0] — 2026-04-09
 
 ### Added
 - Retry logic with configurable `retry` and `retryDelay`.
 
 ---
 
-## [0.6.1] — 2025
+## [0.6.1] — 2026-03-15
 
 ### Changed
 - Renamed `setData` to `mutate`.
 
 ---
 
-## [0.6.0] — 2025
+## [0.6.0] — 2026-02-13
 
 ### Added
 - Batch requests (`useApiBatch`) — parallel requests with combined loading state and progress tracking.
 
 ---
 
-## [0.5.0] — 2025
+## [0.5.0] — 2026-02-11
 
 ### Added
 - `mutate` (formerly `setData`) — manually set `data` value without a network request.
 
 ---
 
-## [0.1.0] — 2025
+## [0.1.0] — 2026-02-05
 
 ### Added
 - Auto-refetch on reactive dependency change (`watch` option).
 
 ---
 
-## [0.0.4] — 2025
+## [0.0.4] — 2026-02-04
 
 ### Added
 - Initial public release.
