@@ -85,6 +85,7 @@ A production-ready composable that eliminates boilerplate and solves the hard pr
   - [ignoreUpdates — Update Without Re-fetching](#ignoreupdates--update-without-re-fetching)
 - [Response Caching](#response-caching)
   - [Stale-While-Revalidate (SWR)](#stale-while-revalidate-swr)
+- [Refetch Triggers](#refetch-triggers)
 - [Polling (Background Updates)](#polling-background-updates)
 - [Error Handling](#error-handling)
   - [retry — Automatic Request Retry](#retry--automatic-request-retry)
@@ -747,6 +748,73 @@ const { data, revalidating, error } = useApi('/dashboard', {
   immediate: true,
 })
 // data.value stays the cached value even after a failed revalidation
+```
+
+---
+
+### Refetch Triggers
+
+**TL;DR: Automatically re-fetch when the user returns to the tab or regains connectivity — no manual wiring needed.**
+
+#### `refetchOnFocus` — Re-fetch on Tab Return
+
+```typescript
+const { data } = useApi('/dashboard', {
+  immediate: true,
+  refetchOnFocus: true, // default throttle: 60s
+})
+```
+
+Pass `{ throttle: 0 }` to always re-fetch regardless of how recently data was loaded:
+
+```typescript
+const { data } = useApi('/notifications', {
+  immediate: true,
+  refetchOnFocus: { throttle: 0 },
+})
+```
+
+Works seamlessly with `cache: { swr: true }` — the user sees stale data instantly, fresh data arrives silently in the background:
+
+```typescript
+const { data, revalidating } = useApi('/feed', {
+  cache: { id: 'feed', swr: true },
+  refetchOnFocus: true,
+  immediate: true,
+})
+```
+
+#### `refetchOnReconnect` — Re-fetch on Network Restore
+
+```typescript
+const { data } = useApi('/messages', {
+  immediate: true,
+  refetchOnReconnect: true,
+})
+```
+
+#### Global Configuration
+
+Apply to all `useApi` instances at once:
+
+```typescript
+createApiClient({
+  axios,
+  globalOptions: {
+    refetchOnFocus: true,
+    refetchOnReconnect: true,
+  },
+})
+```
+
+Opt individual requests out with `refetchOnFocus: false`:
+
+```typescript
+// Global refetchOnFocus: true, but this request opts out
+const { data } = useApi('/static-config', {
+  refetchOnFocus: false,
+  immediate: true,
+})
 ```
 
 ---
