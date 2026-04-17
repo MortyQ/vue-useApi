@@ -67,7 +67,8 @@ All runtime request behavior is passed from the component into the returned fact
 - `retry`
 - `skipErrorNotification`
 - `cache` / `invalidateCache`
-- `staleWhileRevalidate`
+- `refetchOnFocus`
+- `refetchOnReconnect`
 - `select`
 - `withCredentials`
 
@@ -208,8 +209,10 @@ These options are available in `UseApiOptions` and flow through the factory patt
 | Option | What it does | When to consider |
 |--------|-------------|-----------------|
 | `select` | Transforms response data before storing in `data`. Re-applied on every fetch, polling tick, and SWR revalidation. | When the component needs a different shape than what the server returns |
-| `staleWhileRevalidate` | Returns cached data immediately, fetches fresh data silently in the background. Requires `cache`. Exposes `revalidating` ref. | When instant display matters and brief staleness is acceptable |
+| `cache: { id, swr: true }` | Returns cached data immediately, fetches fresh data silently in the background. Exposes `revalidating` ref. | When instant display matters and brief staleness is acceptable |
 | `cache` / `invalidateCache` | In-memory response cache with configurable TTL. `invalidateCache` busts related caches on mutation success. | Repeated reads of rarely-changing data; POST/PUT/DELETE that should invalidate GET caches |
+| `refetchOnFocus` | Re-fetches when the browser tab regains focus. `true` uses a 60s throttle; `{ throttle: 0 }` always refetches. | Dashboards, feeds — keep data fresh when user returns to the tab |
+| `refetchOnReconnect` | Re-fetches when the browser comes back online (`online` event). No throttle. | Any data that may go stale during network outages |
 | `withCredentials` | Overrides the Axios instance default for this request only. | When a specific request needs different cookie/CORS credential behavior than the global setting |
 
 ---

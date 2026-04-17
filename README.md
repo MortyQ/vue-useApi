@@ -705,8 +705,7 @@ import { useApi } from '@ametie/vue-muza-use'
 interface User { id: number; name: string }
 
 const { data, revalidating } = useApi<User[]>('/users', {
-  cache: 'users',
-  staleWhileRevalidate: true,
+  cache: { id: 'users', swr: true },
   immediate: true,
 })
 </script>
@@ -743,8 +742,7 @@ If the background revalidation request fails:
 
 ```typescript
 const { data, revalidating, error } = useApi('/dashboard', {
-  cache: 'dashboard',
-  staleWhileRevalidate: true,
+  cache: { id: 'dashboard', swr: true },
   immediate: true,
 })
 // data.value stays the cached value even after a failed revalidation
@@ -1880,9 +1878,15 @@ Three type parameters — all optional with defaults:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `cache` | `string \| CacheOptions` | `undefined` | Cache the response in memory. String shorthand uses default 5-min TTL. See [Response Caching](#response-caching) |
+| `cache` | `string \| CacheOptions` | `undefined` | Cache the response in memory. String shorthand uses default 5-min TTL. `CacheOptions.swr: true` enables stale-while-revalidate. See [Response Caching](#response-caching) |
 | `invalidateCache` | `string \| string[]` | `undefined` | Cache key(s) to delete on 2xx success. Never fires on error |
-| `staleWhileRevalidate` | `boolean` | `false` | When `true` and a cache hit occurs, return stale data immediately and revalidate in the background. `revalidating` is `true` during the background fetch. See [SWR](#stale-while-revalidate-swr) |
+
+**Refetch Triggers:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `refetchOnFocus` | `boolean \| { throttle?: number }` | `undefined` | Re-fetch when the browser tab regains focus. `true` uses a 60s throttle. Pass `{ throttle: 0 }` to always re-fetch. Configurable globally via `globalOptions` |
+| `refetchOnReconnect` | `boolean` | `undefined` | Re-fetch when the browser regains network connectivity (`online` event). No throttle. Configurable globally via `globalOptions` |
 
 **Polling:**
 
@@ -1949,7 +1953,7 @@ Three type parameters — all optional with defaults:
 | `error` | `Ref<ApiError \| null>` | Error from the last failed request; `null` on success |
 | `statusCode` | `Ref<number \| null>` | HTTP status code from the last completed request |
 | `response` | `Ref<AxiosResponse<unknown> \| null>` | Full Axios response object including headers (raw, before `select`) |
-| `revalidating` | `Ref<boolean>` | `true` while a background SWR revalidation is in flight. Always `false` when `staleWhileRevalidate` is not set |
+| `revalidating` | `Ref<boolean>` | `true` while a background SWR revalidation is in flight. Always `false` when `cache: { swr: true }` is not set |
 | `execute(config?)` | `(config?: ApiRequestConfig<D>) => Promise<TSelected \| null>` | Manually trigger the request, optionally overriding options |
 | `mutate(newData)` | `(newData: TSelected \| null \| ((prev: TSelected \| null) => TSelected \| null)) => void` | Update `data` locally without a network request; clears `error` |
 | `abort(msg?)` | `(message?: string) => void` | Cancel the current in-flight request |
