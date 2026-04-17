@@ -18,6 +18,23 @@ export interface CacheOptions {
      * Default: 300_000 (5 minutes)
      */
     staleTime?: number;
+    /**
+     * Stale-while-revalidate: serve cached data instantly while revalidating in the background.
+     * On a cache hit, data is set immediately (no loading state) and a fresh request runs silently.
+     * The `revalidating` ref is `true` during the background fetch.
+     *
+     * On a cache miss the request behaves normally (loading: true).
+     *
+     * @example
+     * ```ts
+     * const { data, revalidating } = useApi('/users', {
+     *   cache: { id: 'users', swr: true },
+     *   immediate: true,
+     * })
+     * // Template: <span v-if="revalidating">↻</span>
+     * ```
+     */
+    swr?: boolean;
 }
 
 export interface ApiState<T = unknown> {
@@ -117,26 +134,29 @@ export interface UseApiOptions<T = unknown, D = unknown, TSelected = T> extends 
      */
     lazy?: boolean;
     /**
-     * Return cached data immediately and revalidate in the background.
+     * Re-fetch when the browser tab regains focus (`visibilitychange` event).
      *
-     * Requires the `cache` option to be set. On a cache hit the cached value
-     * is returned right away (no loading state, no spinner) while a fresh
-     * request runs silently. The `revalidating` ref is `true` during the
-     * background fetch so you can show a subtle indicator if needed.
+     * - `true` — use default throttle of 60 000ms (prevents rapid refetches on quick tab switches)
+     * - `{ throttle: number }` — custom throttle in ms. Pass `0` to always refetch on focus.
      *
-     * On a cache miss the request behaves normally (loading: true).
+     * No refetch fires if a request is already in-flight (`loading: true`).
+     * Compatible with `lazy: true` — focus is a browser trigger, not a reactive dep.
+     * Compatible with `poll` — both register separate listeners; `!loading` guard prevents duplicates.
      *
-     * @example
-     * ```ts
-     * const { data, revalidating } = useApi('/users', {
-     *   cache: 'users',
-     *   staleWhileRevalidate: true,
-     *   immediate: true,
-     * })
-     * // Template: <span v-if="revalidating">↻</span>
-     * ```
+     * Can be set globally via `createApiClient({ globalOptions: { refetchOnFocus: true } })`.
+     * Per-request value takes precedence over global (including `false` to opt-out).
      */
-    staleWhileRevalidate?: boolean;
+    refetchOnFocus?: boolean | { throttle?: number };
+    /**
+     * Re-fetch when the browser regains network connectivity (`online` event).
+     *
+     * No throttle is applied — reconnect is already a rare event.
+     * No refetch fires if a request is already in-flight (`loading: true`).
+     *
+     * Can be set globally via `createApiClient({ globalOptions: { refetchOnReconnect: true } })`.
+     * Per-request value takes precedence over global (including `false` to opt-out).
+     */
+    refetchOnReconnect?: boolean;
     /**
      * Polling configuration.
      * - Pass a **number** (ms) for simple polling.
@@ -170,7 +190,7 @@ export interface UseApiReturn<T = unknown, D = unknown> {
     response: Ref<AxiosResponse<unknown> | null>;
     /**
      * `true` while a background revalidation request is in-flight.
-     * Only active when `staleWhileRevalidate: true` and a cache hit occurred.
+     * Only active when `cache: { swr: true }` is set and a cache hit occurred.
      * Use it to show a subtle refresh indicator without blocking the UI.
      */
     revalidating: Ref<boolean>;
@@ -230,6 +250,16 @@ export interface ApiPluginOptions {
         retryDelay?: number;
         retryStatusCodes?: number[];
         useGlobalAbort?: boolean;
+        /**
+         * Apply `refetchOnFocus` to all `useApi` instances.
+         * Per-request value (including `false`) takes precedence.
+         */
+        refetchOnFocus?: boolean | { throttle?: number };
+        /**
+         * Apply `refetchOnReconnect` to all `useApi` instances.
+         * Per-request value (including `false`) takes precedence.
+         */
+        refetchOnReconnect?: boolean;
     };
 }
 
