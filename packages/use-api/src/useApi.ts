@@ -1,6 +1,6 @@
 import { debounceFn, DebounceCancelledError } from "./utils/debounce";
 import { type AxiosRequestConfig, type AxiosResponse, isAxiosError } from "axios";
-import { ref, getCurrentScope, onScopeDispose, toValue, watch, type MaybeRefOrGetter } from "vue";
+import { ref, computed, effectScope, getCurrentScope, onScopeDispose, toValue, watch, type MaybeRefOrGetter } from "vue";
 
 import type {
     UseApiOptions,
@@ -70,7 +70,7 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
         // and must not be forwarded to axios.request()
         cache: _cache,
         invalidateCache: _invalidateCache,
-        watch: _watch,
+        lazy = false,
         staleWhileRevalidate = false,
         select,
         ...axiosConfig
@@ -315,29 +315,44 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
         state.setLoading(false);
     };
 
-    // Flag used by ignoreUpdates() to temporarily suppress watch-triggered execution.
-    let ignoreFlag = false;
+    let trackingScope: ReturnType<typeof effectScope> | undefined
 
-    /**
-     * Run `updater` without triggering the watch-based auto re-execution.
-     * Synchronous only — reactive changes made after an `await` inside the
-     * updater will NOT be suppressed (the flag resets after the sync portion).
-     * Safe to call when no `watch` option is configured (no-op, updater still runs).
-     */
-    const ignoreUpdates = (updater: () => void): void => {
-        ignoreFlag = true;
-        try {
-            updater();
-        } finally {
-            ignoreFlag = false;
+    const startAutoTracking = () => {
+        trackingScope = effectScope()
+        trackingScope.run(() => {
+            const urlComputed    = computed(() => toValue(url))
+            const paramsComputed = computed(() => toValue(options.params))
+            const dataComputed   = computed(() => toValue(options.data))
+
+            watch(
+                [urlComputed, paramsComputed, dataComputed],
+                () => execute(),
+                { flush: 'pre', deep: true },
+            )
+        })
+    }
+
+    if (!lazy) {
+        startAutoTracking()
+
+        if (getCurrentScope()) {
+            onScopeDispose(() => trackingScope!.stop())
         }
-    };
+    }
 
-    if (options.watch) {
-        watch(options.watch, () => {
-            if (ignoreFlag) return;
-            execute();
-        }, { deep: true, flush: 'sync' });
+    const ignoreUpdates = (updater: () => void): void => {
+        trackingScope?.pause()
+        try {
+            updater()
+        } finally {
+            // resume() re-queues any effects dirtied during the pause.
+            // We immediately stop the scope so those queued jobs are no-ops
+            // (the job checks effect.flags & 1 before running), then restart
+            // fresh tracking so subsequent dep changes fire normally.
+            trackingScope?.resume()
+            trackingScope?.stop()
+            if (!lazy) startAutoTracking()
+        }
     }
 
     if (getCurrentScope()) {
