@@ -18,6 +18,23 @@ export interface CacheOptions {
      * Default: 300_000 (5 minutes)
      */
     staleTime?: number;
+    /**
+     * Stale-while-revalidate: serve cached data instantly while revalidating in the background.
+     * On a cache hit, data is set immediately (no loading state) and a fresh request runs silently.
+     * The `revalidating` ref is `true` during the background fetch.
+     *
+     * On a cache miss the request behaves normally (loading: true).
+     *
+     * @example
+     * ```ts
+     * const { data, revalidating } = useApi('/users', {
+     *   cache: { id: 'users', swr: true },
+     *   immediate: true,
+     * })
+     * // Template: <span v-if="revalidating">↻</span>
+     * ```
+     */
+    swr?: boolean;
 }
 
 export interface ApiState<T = unknown> {
@@ -110,28 +127,36 @@ export interface UseApiOptions<T = unknown, D = unknown, TSelected = T> extends 
     debounce?: number;
     useGlobalAbort?: boolean;
     initialLoading?: boolean;
-    watch?: WatchSource | WatchSource[];
     /**
-     * Return cached data immediately and revalidate in the background.
-     *
-     * Requires the `cache` option to be set. On a cache hit the cached value
-     * is returned right away (no loading state, no spinner) while a fresh
-     * request runs silently. The `revalidating` ref is `true` during the
-     * background fetch so you can show a subtle indicator if needed.
-     *
-     * On a cache miss the request behaves normally (loading: true).
-     *
-     * @example
-     * ```ts
-     * const { data, revalidating } = useApi('/users', {
-     *   cache: 'users',
-     *   staleWhileRevalidate: true,
-     *   immediate: true,
-     * })
-     * // Template: <span v-if="revalidating">↻</span>
-     * ```
+     * Disable auto-tracking. When true, reactive changes to `url`, `params`,
+     * and `data` will NOT trigger a re-fetch. Use for forms or manual mutations
+     * where you want full control over when `execute()` is called.
      */
-    staleWhileRevalidate?: boolean;
+    lazy?: boolean;
+    /**
+     * Re-fetch when the browser tab regains focus (`visibilitychange` event).
+     *
+     * - `true` — use default throttle of 60 000ms (prevents rapid refetches on quick tab switches)
+     * - `{ throttle: number }` — custom throttle in ms. Pass `0` to always refetch on focus.
+     *
+     * No refetch fires if a request is already in-flight (`loading: true`).
+     * Compatible with `lazy: true` — focus is a browser trigger, not a reactive dep.
+     * Compatible with `poll` — both register separate listeners; `!loading` guard prevents duplicates.
+     *
+     * Can be set globally via `createApiClient({ globalOptions: { refetchOnFocus: true } })`.
+     * Per-request value takes precedence over global (including `false` to opt-out).
+     */
+    refetchOnFocus?: boolean | { throttle?: number };
+    /**
+     * Re-fetch when the browser regains network connectivity (`online` event).
+     *
+     * No throttle is applied — reconnect is already a rare event.
+     * No refetch fires if a request is already in-flight (`loading: true`).
+     *
+     * Can be set globally via `createApiClient({ globalOptions: { refetchOnReconnect: true } })`.
+     * Per-request value takes precedence over global (including `false` to opt-out).
+     */
+    refetchOnReconnect?: boolean;
     /**
      * Polling configuration.
      * - Pass a **number** (ms) for simple polling.
@@ -165,7 +190,7 @@ export interface UseApiReturn<T = unknown, D = unknown> {
     response: Ref<AxiosResponse<unknown> | null>;
     /**
      * `true` while a background revalidation request is in-flight.
-     * Only active when `staleWhileRevalidate: true` and a cache hit occurred.
+     * Only active when `cache: { swr: true }` is set and a cache hit occurred.
      * Use it to show a subtle refresh indicator without blocking the UI.
      */
     revalidating: Ref<boolean>;
@@ -173,24 +198,22 @@ export interface UseApiReturn<T = unknown, D = unknown> {
     abort: (message?: string) => void;
     reset: () => void;
     /**
-     * Run `updater` without triggering the watch-based auto re-execution.
+     * Run `updater` without triggering auto-tracked re-execution.
      *
-     * Useful for atomically updating multiple reactive sources (filters, pagination refs,
-     * form fields) without firing intermediate requests. After the updater runs, call
-     * `execute()` manually to fetch with the new values.
+     * Pauses the internal tracking scope for the duration of the updater,
+     * so reactive changes to `url`, `params`, or `data` inside it do not
+     * fire a request.
      *
-     * **Synchronous only** — reactive changes that occur after an `await` inside the
-     * updater will NOT be suppressed (the flag resets after the synchronous portion).
+     * **Synchronous only** — changes after an `await` inside the updater
+     * will NOT be suppressed (the scope resumes after the sync portion).
      *
-     * Safe to call even when no `watch` option is configured — the updater still runs,
-     * no error is thrown.
+     * Safe to call when `lazy: true` — the updater still runs, no error is thrown.
      *
      * @example
      * ignoreUpdates(() => {
-     *   filters.value.page = 1
-     *   filters.value.search = 'john'
+     *   filters.value.status = 'active'
      * })
-     * await execute() // single request with all new values
+     * // watch is suppressed — no request fires
      */
     ignoreUpdates: (updater: () => void) => void;
     /**
@@ -227,6 +250,16 @@ export interface ApiPluginOptions {
         retryDelay?: number;
         retryStatusCodes?: number[];
         useGlobalAbort?: boolean;
+        /**
+         * Apply `refetchOnFocus` to all `useApi` instances.
+         * Per-request value (including `false`) takes precedence.
+         */
+        refetchOnFocus?: boolean | { throttle?: number };
+        /**
+         * Apply `refetchOnReconnect` to all `useApi` instances.
+         * Per-request value (including `false`) takes precedence.
+         */
+        refetchOnReconnect?: boolean;
     };
 }
 

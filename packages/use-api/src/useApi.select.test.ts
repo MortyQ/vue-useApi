@@ -217,7 +217,7 @@ describe('select — cache stores raw, select is re-applied on cache hit', () =>
         resolveWith(freshRaw)
         const second = mountSelect<RawUser[], User[]>(
             (users) => users.map(u => ({ id: u.id, fullName: `${u.first} ${u.last}` })),
-            { cache: 'users', staleWhileRevalidate: true },
+            { cache: { id: 'users', swr: true } },
         )
 
         second.execute()

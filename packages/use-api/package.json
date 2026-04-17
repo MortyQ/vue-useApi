@@ -50,7 +50,7 @@
   },
   "peerDependencies": {
     "axios": "^1.0.0",
-    "vue": "^3.3.0"
+    "vue": "^3.5.0"
   },
   "devDependencies": {
     "@semantic-release/git": "^10.0.1",

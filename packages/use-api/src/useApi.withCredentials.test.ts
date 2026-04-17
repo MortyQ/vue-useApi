@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { defineComponent, ref } from 'vue'
+import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 import type { AxiosInstance } from 'axios'
 import { useApi } from './useApi'
@@ -120,9 +120,6 @@ describe('useApi — library options not forwarded to axios', () => {
         expect(cfg).not.toHaveProperty('invalidateCache')
     })
 
-    it('watch option is not sent to axios', async () => {
-        const filter = ref('a')
-        const cfg = await mountAndExecute({ watch: [filter] })
-        expect(cfg).not.toHaveProperty('watch')
-    })
+    // Note: the `watch` option was removed in v1.0 (replaced by auto-tracking).
+    // TypeScript prevents passing it — no runtime stripping needed.
 })

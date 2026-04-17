@@ -1,6 +1,6 @@
 import { debounceFn, DebounceCancelledError } from "./utils/debounce";
 import { type AxiosRequestConfig, type AxiosResponse, isAxiosError } from "axios";
-import { ref, getCurrentScope, onScopeDispose, toValue, watch, type MaybeRefOrGetter } from "vue";
+import { ref, computed, effectScope, getCurrentScope, onScopeDispose, toValue, watch, type MaybeRefOrGetter } from "vue";
 
 import type {
     UseApiOptions,
@@ -13,21 +13,22 @@ import { parseApiError } from "./utils/errorParser";
 import { useApiState } from "./composables/useApiState";
 import { useAbortController } from "./composables/useAbortController";
 import { readCache, writeCache, invalidateCache as cacheInvalidate, DEFAULT_STALE_TIME } from "./features/cacheManager";
+import { useRefetchTriggers } from "./composables/useRefetchTriggers";
 
 const DEFAULT_RETRY_STATUS_CODES = [408, 429, 500, 502, 503, 504];
 
 /**
- * Normalise the `cache` option into a consistent shape with a guaranteed `staleTime`.
+ * Normalise the `cache` option into a consistent shape with a guaranteed `staleTime` and `swr` flag.
  * Returns null if caching is not configured.
  */
 function normalizeCacheOptions(
     cache: string | CacheOptions | undefined,
-): { id: string; staleTime: number } | null {
+): { id: string; staleTime: number; swr: boolean } | null {
     if (!cache) return null;
     if (typeof cache === "string") {
-        return { id: cache, staleTime: DEFAULT_STALE_TIME };
+        return { id: cache, staleTime: DEFAULT_STALE_TIME, swr: false };
     }
-    return { id: cache.id, staleTime: cache.staleTime ?? DEFAULT_STALE_TIME };
+    return { id: cache.id, staleTime: cache.staleTime ?? DEFAULT_STALE_TIME, swr: cache.swr ?? false };
 }
 
 /**
@@ -70,8 +71,9 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
         // and must not be forwarded to axios.request()
         cache: _cache,
         invalidateCache: _invalidateCache,
-        watch: _watch,
-        staleWhileRevalidate = false,
+        lazy = false,
+        refetchOnFocus: _refetchOnFocus,
+        refetchOnReconnect: _refetchOnReconnect,
         select,
         ...axiosConfig
     } = options;
@@ -87,6 +89,8 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
     const abortController = ref<AbortController | null>(null);
     const globalAbort = useGlobalAbort ? useAbortController() : null;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    // notifyFetched is reassigned after reset() is defined — see useRefetchTriggers wiring below
+    let notifyFetched: () => void = () => {};
 
     // Helper to resolve poll config
     const getPollConfig = () => {
@@ -103,13 +107,13 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
 
     const executeRequest = async (config?: ApiRequestConfig<D>): Promise<TSelected | null> => {
         /**
-         * Cache hit behavior (staleWhileRevalidate: false — default):
+         * Cache hit behavior (cache.swr: false — default):
          * - mutate() called with cached data
          * - loading stays false
          * - onBefore / onSuccess / onFinish NOT called
          * - axios request NOT made
          *
-         * Cache hit behavior (staleWhileRevalidate: true — SWR):
+         * Cache hit behavior (cache.swr: true — SWR):
          * - mutate() called with cached data immediately (no loading flash)
          * - revalidating set to true
          * - axios request IS made in the background
@@ -133,7 +137,7 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
             const cached = readCache<T>(cacheOpts.id);
             if (cached !== null) {
                 state.mutate(applySelect(cached));
-                if (!staleWhileRevalidate) {
+                if (!cacheOpts.swr) {
                     return applySelect(cached);
                 }
                 // SWR: serve cache immediately, continue to fetch fresh data in background
@@ -217,6 +221,7 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
                     }
 
                     onSuccess?.(response);
+                    notifyFetched(); // reset focus-throttle clock — only on success, not on error
                     return selected;
 
                 } catch (err: unknown) {
@@ -315,29 +320,58 @@ export function useApi<T = unknown, D = unknown, TSelected = T>(
         state.setLoading(false);
     };
 
-    // Flag used by ignoreUpdates() to temporarily suppress watch-triggered execution.
-    let ignoreFlag = false;
+    // -------------------------------------------------------------------------
+    // Refetch triggers — focus + reconnect
+    // -------------------------------------------------------------------------
+    const refetchOnFocus = _refetchOnFocus ?? globalOptions?.refetchOnFocus;
+    const refetchOnReconnect = _refetchOnReconnect ?? globalOptions?.refetchOnReconnect;
 
-    /**
-     * Run `updater` without triggering the watch-based auto re-execution.
-     * Synchronous only — reactive changes made after an `await` inside the
-     * updater will NOT be suppressed (the flag resets after the sync portion).
-     * Safe to call when no `watch` option is configured (no-op, updater still runs).
-     */
-    const ignoreUpdates = (updater: () => void): void => {
-        ignoreFlag = true;
-        try {
-            updater();
-        } finally {
-            ignoreFlag = false;
+    const { notifyFetched: _notifyFetched } = useRefetchTriggers({
+        refetchOnFocus,
+        refetchOnReconnect,
+        loading: state.loading,
+        onTrigger: () => execute(),
+    });
+    notifyFetched = _notifyFetched;
+
+    let trackingScope: ReturnType<typeof effectScope> | undefined
+
+    const startAutoTracking = () => {
+        trackingScope = effectScope()
+        trackingScope.run(() => {
+            const urlComputed    = computed(() => toValue(url))
+            const paramsComputed = computed(() => toValue(options.params))
+            const dataComputed   = computed(() => toValue(options.data))
+
+            watch(
+                [urlComputed, paramsComputed, dataComputed],
+                () => execute(),
+                { flush: 'pre', deep: true },
+            )
+        })
+    }
+
+    if (!lazy) {
+        startAutoTracking()
+
+        if (getCurrentScope()) {
+            onScopeDispose(() => trackingScope!.stop())
         }
-    };
+    }
 
-    if (options.watch) {
-        watch(options.watch, () => {
-            if (ignoreFlag) return;
-            execute();
-        }, { deep: true, flush: 'sync' });
+    const ignoreUpdates = (updater: () => void): void => {
+        trackingScope?.pause()
+        try {
+            updater()
+        } finally {
+            // resume() re-queues any effects dirtied during the pause.
+            // We immediately stop the scope so those queued jobs are no-ops
+            // (the job checks effect.flags & 1 before running), then restart
+            // fresh tracking so subsequent dep changes fire normally.
+            trackingScope?.resume()
+            trackingScope?.stop()
+            if (!lazy) startAutoTracking()
+        }
     }
 
     if (getCurrentScope()) {

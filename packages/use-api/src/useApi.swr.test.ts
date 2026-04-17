@@ -1,14 +1,14 @@
 /**
- * staleWhileRevalidate (SWR) — full coverage
+ * SWR (stale-while-revalidate via CacheOptions.swr) — full coverage
  *
  * Covers:
- *  - cache hit + SWR: stale data returned immediately, revalidating: true
- *  - cache hit + SWR: fresh data set when request resolves, revalidating: false
- *  - cache hit + SWR: loading stays false throughout (no spinner)
- *  - cache hit + SWR: onBefore is NOT called (silent background fetch)
- *  - cache hit + SWR: onFinish IS called after background fetch
- *  - cache miss + SWR: behaves like normal request (loading: true)
- *  - cache hit + SWR disabled: returns stale data, no request (original behavior)
+ *  - cache hit + swr: stale data returned immediately, revalidating: true
+ *  - cache hit + swr: fresh data set when request resolves, revalidating: false
+ *  - cache hit + swr: loading stays false throughout (no spinner)
+ *  - cache hit + swr: onBefore is NOT called (silent background fetch)
+ *  - cache hit + swr: onFinish IS called after background fetch
+ *  - cache miss + swr: behaves like normal request (loading: true)
+ *  - cache hit + swr disabled: returns stale data, no request (original behavior)
  *  - SWR error: revalidating resets to false, error is set
  */
 
@@ -19,10 +19,6 @@ import type { AxiosInstance } from 'axios'
 import { useApi } from './useApi'
 import { createApi } from './plugin'
 import { clearAllCache } from './features/cacheManager'
-
-// ---------------------------------------------------------------------------
-// Shared mock
-// ---------------------------------------------------------------------------
 
 const mockAxios = {
     request: vi.fn(),
@@ -37,10 +33,6 @@ beforeEach(() => {
     vi.resetAllMocks()
     clearAllCache()
 })
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 type AnyUseApiReturn = ReturnType<typeof useApi>
 
@@ -71,25 +63,18 @@ function rejectWith(status: number, message: string) {
     )
 }
 
-// ---------------------------------------------------------------------------
-// SWR — cache hit
-// ---------------------------------------------------------------------------
-
-describe('staleWhileRevalidate — cache hit', () => {
+describe('SWR (cache.swr: true) — cache hit', () => {
     it('returns stale data immediately without waiting for the request', async () => {
-        // First request — populates cache
         resolveWith({ name: 'stale' })
         const first = mountApi({ cache: 'test', immediate: true })
         await first.execute()
         expect(first.data.value).toEqual({ name: 'stale' })
 
-        // Second mount — SWR: stale data available instantly
         resolveWith({ name: 'fresh' })
-        const second = mountApi({ cache: 'test', staleWhileRevalidate: true })
+        const second = mountApi({ cache: { id: 'test', swr: true } })
 
         second.execute()
 
-        // Synchronously after execute() — stale data is already set
         expect(second.data.value).toEqual({ name: 'stale' })
     })
 
@@ -98,18 +83,16 @@ describe('staleWhileRevalidate — cache hit', () => {
         const first = mountApi({ cache: 'test', immediate: true })
         await first.execute()
 
-        // Hang the second request so we can observe revalidating mid-flight
         let resolveHang!: (v: unknown) => void
         ;(mockAxios.request as ReturnType<typeof vi.fn>).mockReturnValueOnce(
             new Promise(resolve => { resolveHang = resolve }),
         )
 
-        const second = mountApi({ cache: 'test', staleWhileRevalidate: true })
+        const second = mountApi({ cache: { id: 'test', swr: true } })
         second.execute()
 
         expect(second.revalidating.value).toBe(true)
 
-        // Resolve the background request
         resolveHang({ data: 'fresh', status: 200 })
         await new Promise(r => setTimeout(r, 0))
 
@@ -126,10 +109,9 @@ describe('staleWhileRevalidate — cache hit', () => {
             new Promise(resolve => { resolveHang = resolve }),
         )
 
-        const second = mountApi({ cache: 'test', staleWhileRevalidate: true })
+        const second = mountApi({ cache: { id: 'test', swr: true } })
         second.execute()
 
-        // loading must stay false — user already sees data
         expect(second.loading.value).toBe(false)
 
         resolveHang({ data: 'fresh', status: 200 })
@@ -144,7 +126,7 @@ describe('staleWhileRevalidate — cache hit', () => {
         await first.execute()
 
         resolveWith('fresh')
-        const second = mountApi({ cache: 'test', staleWhileRevalidate: true })
+        const second = mountApi({ cache: { id: 'test', swr: true } })
         await second.execute()
 
         expect(second.data.value).toBe('fresh')
@@ -155,7 +137,7 @@ describe('staleWhileRevalidate — cache hit', () => {
         await mountApi({ cache: 'test', immediate: true }).execute()
 
         resolveWith('fresh')
-        const second = mountApi({ cache: 'test', staleWhileRevalidate: true })
+        const second = mountApi({ cache: { id: 'test', swr: true } })
         await second.execute()
 
         expect(second.revalidating.value).toBe(false)
@@ -167,7 +149,7 @@ describe('staleWhileRevalidate — cache hit', () => {
 
         const onBefore = vi.fn()
         resolveWith('fresh')
-        const second = mountApi({ cache: 'test', staleWhileRevalidate: true, onBefore })
+        const second = mountApi({ cache: { id: 'test', swr: true }, onBefore })
         await second.execute()
 
         expect(onBefore).not.toHaveBeenCalled()
@@ -179,7 +161,7 @@ describe('staleWhileRevalidate — cache hit', () => {
 
         const onSuccess = vi.fn()
         resolveWith('fresh')
-        const second = mountApi({ cache: 'test', staleWhileRevalidate: true, onSuccess })
+        const second = mountApi({ cache: { id: 'test', swr: true }, onSuccess })
         await second.execute()
 
         expect(onSuccess).toHaveBeenCalledOnce()
@@ -192,28 +174,23 @@ describe('staleWhileRevalidate — cache hit', () => {
 
         const onFinish = vi.fn()
         resolveWith('fresh')
-        const second = mountApi({ cache: 'test', staleWhileRevalidate: true, onFinish })
+        const second = mountApi({ cache: { id: 'test', swr: true }, onFinish })
         await second.execute()
 
         expect(onFinish).toHaveBeenCalledOnce()
     })
 })
 
-// ---------------------------------------------------------------------------
-// SWR — cache miss (behaves like normal request)
-// ---------------------------------------------------------------------------
-
-describe('staleWhileRevalidate — cache miss', () => {
+describe('SWR (cache.swr: true) — cache miss', () => {
     it('no cache entry: loading is true (normal request behavior)', async () => {
         let resolveHang!: (v: unknown) => void
         ;(mockAxios.request as ReturnType<typeof vi.fn>).mockReturnValueOnce(
             new Promise(resolve => { resolveHang = resolve }),
         )
 
-        const api = mountApi({ cache: 'test', staleWhileRevalidate: true })
+        const api = mountApi({ cache: { id: 'test', swr: true } })
         api.execute()
 
-        // No cache → loading: true as normal
         expect(api.loading.value).toBe(true)
         expect(api.revalidating.value).toBe(false)
 
@@ -224,25 +201,21 @@ describe('staleWhileRevalidate — cache miss', () => {
     it('no cache entry: onBefore IS called (normal request)', async () => {
         const onBefore = vi.fn()
         resolveWith('data')
-        const api = mountApi({ cache: 'test', staleWhileRevalidate: true, onBefore })
+        const api = mountApi({ cache: { id: 'test', swr: true }, onBefore })
         await api.execute()
 
         expect(onBefore).toHaveBeenCalledOnce()
     })
 })
 
-// ---------------------------------------------------------------------------
-// SWR disabled (original cache behavior)
-// ---------------------------------------------------------------------------
-
-describe('staleWhileRevalidate: false (default)', () => {
+describe('SWR disabled (default)', () => {
     it('cache hit returns stale data and makes NO axios request', async () => {
         resolveWith('stale')
         await mountApi({ cache: 'test', immediate: true }).execute()
 
         vi.resetAllMocks()
 
-        const second = mountApi({ cache: 'test' }) // staleWhileRevalidate: false by default
+        const second = mountApi({ cache: 'test' }) // swr: false by default
         await second.execute()
 
         expect(mockAxios.request).not.toHaveBeenCalled()
@@ -258,17 +231,13 @@ describe('staleWhileRevalidate: false (default)', () => {
     })
 })
 
-// ---------------------------------------------------------------------------
-// SWR — error handling
-// ---------------------------------------------------------------------------
-
-describe('staleWhileRevalidate — error during revalidation', () => {
+describe('SWR — error during revalidation', () => {
     it('revalidating resets to false when the background request fails', async () => {
         resolveWith('stale')
         await mountApi({ cache: 'test', immediate: true }).execute()
 
         rejectWith(500, 'Server Error')
-        const second = mountApi({ cache: 'test', staleWhileRevalidate: true })
+        const second = mountApi({ cache: { id: 'test', swr: true } })
         await second.execute()
 
         expect(second.revalidating.value).toBe(false)
@@ -279,10 +248,9 @@ describe('staleWhileRevalidate — error during revalidation', () => {
         await mountApi({ cache: 'test', immediate: true }).execute()
 
         rejectWith(500, 'Server Error')
-        const second = mountApi({ cache: 'test', staleWhileRevalidate: true })
+        const second = mountApi({ cache: { id: 'test', swr: true } })
         await second.execute()
 
-        // Data keeps the stale value even after a failed revalidation
         expect(second.data.value).toBe('stale')
     })
 
@@ -292,8 +260,7 @@ describe('staleWhileRevalidate — error during revalidation', () => {
 
         rejectWith(503, 'Unavailable')
         const second = mountApi({
-            cache: 'test',
-            staleWhileRevalidate: true,
+            cache: { id: 'test', swr: true },
             skipErrorNotification: true,
         })
         await second.execute()
@@ -307,7 +274,7 @@ describe('staleWhileRevalidate — error during revalidation', () => {
         await mountApi({ cache: 'test', immediate: true }).execute()
 
         rejectWith(500, 'Error')
-        const second = mountApi({ cache: 'test', staleWhileRevalidate: true, skipErrorNotification: true })
+        const second = mountApi({ cache: { id: 'test', swr: true }, skipErrorNotification: true })
         await second.execute()
 
         expect(second.loading.value).toBe(false)

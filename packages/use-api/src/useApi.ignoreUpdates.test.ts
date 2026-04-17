@@ -2,10 +2,11 @@
  * useApi — ignoreUpdates & useGlobalAbort
  *
  * ignoreUpdates covers:
- *  - suppresses watch-triggered execution when refs change inside updater
+ *  - suppresses auto-tracking when ref changes inside updater
  *  - the updater still executes (side effects happen)
- *  - after ignoreUpdates, subsequent ref changes trigger normally
+ *  - after ignoreUpdates, subsequent dep changes trigger normally
  *  - multiple refs changed inside one ignoreUpdates → still suppressed
+ *  - scope resumes even if updater throws
  *
  * useGlobalAbort covers:
  *  - when useGlobalAbort: true (default), a global abort() cancels the in-flight request
@@ -13,16 +14,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { defineComponent, ref } from 'vue'
+import { defineComponent, ref, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import type { AxiosInstance } from 'axios'
 import { useApi } from './useApi'
 import { useAbortController } from './composables/useAbortController'
 import { createApi } from './plugin'
-
-// ---------------------------------------------------------------------------
-// Shared mock
-// ---------------------------------------------------------------------------
 
 const mockAxios = {
     request: vi.fn(),
@@ -33,23 +30,16 @@ const mockAxios = {
     defaults: { headers: { common: {} } },
 } as unknown as AxiosInstance
 
-// resetAllMocks (not clearAllMocks) is required here: clearAllMocks only resets call history,
-// while resetAllMocks also clears the mockResolvedValueOnce queue. Without this, leftover
-// once-values from earlier tests intercept mockImplementation calls in later tests.
 beforeEach(() => vi.resetAllMocks())
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 type AnyUseApiReturn = ReturnType<typeof useApi>
 
-function mountWithWatch(watchSources: NonNullable<Parameters<typeof useApi>[1]>['watch']): AnyUseApiReturn {
+function mountWithParams(filter: ReturnType<typeof ref>): AnyUseApiReturn {
     let api!: AnyUseApiReturn
     mount(
         defineComponent({
             setup() {
-                api = useApi('/test', { watch: watchSources })
+                api = useApi('/test', { params: () => ({ q: filter.value }) })
                 return () => null
             },
         }),
@@ -67,73 +57,82 @@ function successOnce() {
 // ---------------------------------------------------------------------------
 
 describe('useApi — ignoreUpdates', () => {
-    it('ref change inside ignoreUpdates does NOT trigger a request', () => {
+    it('ref change inside ignoreUpdates does NOT trigger a request', async () => {
         const filter = ref('a')
-        const api = mountWithWatch([filter])
+        const api = mountWithParams(filter)
 
         vi.clearAllMocks()
         api.ignoreUpdates(() => { filter.value = 'b' })
+        await nextTick()
 
-        // watch has flush: 'sync', so if it fired, axios.request would be called now
         expect(mockAxios.request).not.toHaveBeenCalled()
     })
 
-    it('normal ref change outside ignoreUpdates triggers a request', () => {
-        successOnce()
+    it('normal ref change outside ignoreUpdates triggers a request', async () => {
         const filter = ref('a')
-        mountWithWatch([filter])
+        mountWithParams(filter)
 
         vi.clearAllMocks()
         successOnce()
         filter.value = 'c'
+        await nextTick()
 
         expect(mockAxios.request).toHaveBeenCalledOnce()
     })
 
     it('ignoreUpdates() still executes the updater function', () => {
         const filter = ref('original')
-        const api = mountWithWatch([filter])
+        const api = mountWithParams(filter)
 
         api.ignoreUpdates(() => { filter.value = 'mutated' })
 
         expect(filter.value).toBe('mutated')
     })
 
-    it('after ignoreUpdates, subsequent ref changes trigger normally', () => {
+    it('after ignoreUpdates, subsequent ref changes trigger normally', async () => {
         const filter = ref('a')
-        const api = mountWithWatch([filter])
+        const api = mountWithParams(filter)
 
-        // suppressed change
         api.ignoreUpdates(() => { filter.value = 'b' })
         vi.clearAllMocks()
 
-        // normal change — should trigger
         successOnce()
         filter.value = 'c'
+        await nextTick()
 
         expect(mockAxios.request).toHaveBeenCalledOnce()
     })
 
-    it('multiple refs changed inside one ignoreUpdates are all suppressed', () => {
+    it('multiple refs changed inside one ignoreUpdates are all suppressed', async () => {
         const a = ref(1)
         const b = ref(2)
-        const api = mountWithWatch([a, b])
+        let api!: AnyUseApiReturn
+        mount(
+            defineComponent({
+                setup() {
+                    api = useApi('/test', { params: () => ({ a: a.value, b: b.value }) })
+                    return () => null
+                },
+            }),
+            { global: { plugins: [createApi({ axios: mockAxios })] } },
+        )
 
         vi.clearAllMocks()
         api.ignoreUpdates(() => {
             a.value = 10
             b.value = 20
         })
+        await nextTick()
 
         expect(mockAxios.request).not.toHaveBeenCalled()
     })
 
-    it('ignoreUpdates is a no-op when no watch option is configured', () => {
+    it('ignoreUpdates is a no-op when lazy: true — updater still runs', () => {
         let api!: AnyUseApiReturn
         mount(
             defineComponent({
                 setup() {
-                    api = useApi('/test')  // no watch
+                    api = useApi('/test', { lazy: true })
                     return () => null
                 },
             }),
@@ -142,26 +141,39 @@ describe('useApi — ignoreUpdates', () => {
 
         expect(() => api.ignoreUpdates(() => {})).not.toThrow()
     })
+
+    it('scope resumes even if updater throws — next change fires normally', async () => {
+        const filter = ref('a')
+        const api = mountWithParams(filter)
+
+        expect(() => {
+            api.ignoreUpdates(() => { throw new Error('updater error') })
+        }).toThrow('updater error')
+
+        vi.clearAllMocks()
+        successOnce()
+        filter.value = 'after-throw'
+        await nextTick()
+
+        expect(mockAxios.request).toHaveBeenCalledTimes(1)
+    })
 })
 
 // ---------------------------------------------------------------------------
-// useGlobalAbort
+// useGlobalAbort (unchanged)
 // ---------------------------------------------------------------------------
 
 describe('useApi — useGlobalAbort', () => {
     it('global abort() cancels a request with useGlobalAbort: true (default)', () => {
-        // Capture the global signal BEFORE execute() runs so we can verify it's aborted later
         const { abort, getSignal } = useAbortController()
         const globalSignal = getSignal()
 
         let capturedSignal: AbortSignal | undefined
         ;(mockAxios.request as ReturnType<typeof vi.fn>).mockImplementation((cfg: any) => {
             capturedSignal = cfg.signal
-            return new Promise(() => {}) // hang — never resolves
+            return new Promise(() => {})
         })
 
-        // immediate: true → execute() is called inside useApi() setup, axios.request() fires
-        // synchronously before the first await, so capturedSignal is set by the time mount() returns
         mount(
             defineComponent({
                 setup() {
@@ -175,11 +187,10 @@ describe('useApi — useGlobalAbort', () => {
         expect(capturedSignal).toBeDefined()
         expect(capturedSignal!.aborted).toBe(false)
 
-        // abort() fires the event listener synchronously → per-request controller.abort() is called
         abort()
 
-        expect(globalSignal.aborted).toBe(true)     // global signal aborted
-        expect(capturedSignal!.aborted).toBe(true)  // per-request signal aborted via the listener
+        expect(globalSignal.aborted).toBe(true)
+        expect(capturedSignal!.aborted).toBe(true)
     })
 
     it('useGlobalAbort: false — global abort does NOT cancel the request', () => {
@@ -203,11 +214,9 @@ describe('useApi — useGlobalAbort', () => {
         )
 
         api.execute()
-
         expect(capturedSignal).toBeDefined()
         abort()
 
-        // Per-request signal is NOT connected to the global abort
         expect(capturedSignal!.aborted).toBe(false)
     })
 })
