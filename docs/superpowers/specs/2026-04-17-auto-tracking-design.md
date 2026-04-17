@@ -81,19 +81,25 @@ File: `packages/use-api/src/useApi.ts`
 
 ```ts
 if (!lazy) {
-  const urlComputed    = computed(() => toValue(url))
-  const paramsComputed = computed(() => toValue(options.params))
-  const dataComputed   = computed(() => toValue(options.data))
+  const trackingScope = effectScope()
 
-  const watchHandle = watch(
-    [urlComputed, paramsComputed, dataComputed],
-    () => debouncedExecute(),
-    { flush: 'pre', deep: true },
-  )
+  trackingScope.run(() => {
+    const urlComputed    = computed(() => toValue(url))
+    const paramsComputed = computed(() => toValue(options.params))
+    const dataComputed   = computed(() => toValue(options.data))
 
-  onScopeDispose(() => watchHandle.stop())
+    watch(
+      [urlComputed, paramsComputed, dataComputed],
+      () => debouncedExecute(),
+      { flush: 'pre', deep: true },
+    )
+  })
+
+  onScopeDispose(() => trackingScope.stop())
 }
 ```
+
+`effectScope` groups all 4 effects (3 computeds + watch) under a single lifecycle. One `trackingScope.stop()` cleans everything up — no need to track `watchHandle` separately.
 
 **Why `computed()` over `watchEffect`:**
 - Explicit tracking scope — only `url`, `params`, `data`. No accidental tracking of store reads inside `execute()`.
@@ -108,17 +114,29 @@ if (!lazy) {
 
 ### ignoreUpdates — migrated to pause/resume
 
+Since `watchHandle` lives inside `effectScope`, we expose `pause/resume` via a ref:
+
 ```ts
+let trackingScope: ReturnType<typeof effectScope> | undefined
+
+if (!lazy) {
+  trackingScope = effectScope()
+  trackingScope.run(() => {
+    // computeds + watch
+  })
+  onScopeDispose(() => trackingScope!.stop())
+}
+
 const ignoreUpdates = (updater: () => void) => {
-  watchHandle?.pause()
+  trackingScope?.pause()
   try { updater() }
-  finally { watchHandle?.resume() }
+  finally { trackingScope?.resume() }
 }
 ```
 
 - `ignoreFlag` boolean and all associated checks removed.
-- `watchHandle?.pause()` works correctly with `flush: 'pre'` — pending callbacks are discarded during pause.
-- If `lazy: true`, `watchHandle` is undefined — `ignoreUpdates` becomes a safe no-op (updater still runs).
+- `trackingScope.pause()` works correctly with `flush: 'pre'` — pending callbacks are discarded during pause.
+- If `lazy: true`, `trackingScope` is undefined — `ignoreUpdates` becomes a safe no-op (updater still runs).
 
 ---
 
